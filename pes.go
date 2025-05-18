@@ -28,16 +28,16 @@ func parsePESPacket(fd *os.File, startAt int64) (err error) {
 		err = fmt.Errorf("failed to parse PES headers: %w", err)
 		return
 	}
-	fmt.Printf("Parsed PES Headers:\n%s\n%#v\n", headers, headers)
+	fmt.Printf("Parsed PES Headers: %s\n", headers)
 	// Read data
-	dataOffset := headers.DataOffset()
-	fmt.Printf("Data offset: %d\n", dataOffset)
-	buffer = make([]byte, headers.PacketLength()-dataOffset)
-	if _, err = fd.ReadAt(buffer, startAt+dataOffset); err != nil {
+	buffer = make([]byte, 0x000001000)
+	if _, err = fd.ReadAt(buffer, startAt); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)
 		return
 	}
-	fmt.Printf("Data: %x\n", buffer)
+	fmt.Printf("Packet: %x\n", buffer)
+	fmt.Printf("Packet len: buffer size: %d  packet length: %d\n", len(buffer), headers.PacketLength())
+	fmt.Printf("Stuffing: %x\n", buffer[headers.PacketLength()-2:])
 	return
 }
 
@@ -228,6 +228,7 @@ func (poh PESOptionalHeaders) Extension() bool {
 
 func (poh PESOptionalHeaders) RemainingHeaderLength() int64 {
 	if poh.Valid() {
+		fmt.Printf("Remaining header lenght: %08b\n", poh[2])
 		return int64(poh[2])
 	}
 	return 0

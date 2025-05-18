@@ -12,6 +12,8 @@ func main() {
 }
 
 func ReadVobSub(subFile string) (err error) {
+	// Parse IDX
+	//// TODO
 	// Open the binary sub file
 	fd, err := os.Open(subFile)
 	if err != nil {
