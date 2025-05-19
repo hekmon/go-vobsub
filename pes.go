@@ -1,4 +1,4 @@
-package main
+package vobsub
 
 import (
 	"encoding/binary"
@@ -108,53 +108,6 @@ func (ph PESHeaders) GoString() string {
 	}
 	repr.WriteString(">")
 	return repr.String()
-}
-
-type StreamID byte
-
-func (sid StreamID) StreamType() StreamType {
-	switch {
-	case sid >= 0xC0 && sid <= 0xDF:
-		return StreamTypeAudio
-	case sid >= 0xE0 && sid <= 0xEF:
-		return StreamTypeVideo
-	case sid == 0xBA: // seen in the wild
-		return StreamTypeSubtitle
-	default:
-		return StreamTypeUnknown
-	}
-}
-
-func (sid StreamID) String() string {
-	return fmt.Sprintf("%02X", byte(sid))
-}
-
-func (sid StreamID) GoString() string {
-	return fmt.Sprintf("%02X (%s)", byte(sid), sid.StreamType())
-}
-
-type StreamType uint8
-
-const (
-	StreamTypeUnknown StreamType = iota
-	StreamTypeVideo
-	StreamTypeAudio
-	StreamTypeSubtitle
-)
-
-func (st StreamType) String() string {
-	switch st {
-	case StreamTypeUnknown:
-		return "Unknown"
-	case StreamTypeVideo:
-		return "Video"
-	case StreamTypeAudio:
-		return "Audio"
-	case StreamTypeSubtitle:
-		return "Subtitle"
-	default:
-		return "Invalid"
-	}
 }
 
 // https://en.wikipedia.org/wiki/Packetized_elementary_stream#Optional_PES_header

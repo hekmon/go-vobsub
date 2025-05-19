@@ -1,15 +1,9 @@
-package main
+package vobsub
 
 import (
 	"fmt"
 	"os"
 )
-
-func main() {
-	if err := ReadVobSub(file); err != nil {
-		panic(err)
-	}
-}
 
 func ReadVobSub(subFile string) (err error) {
 	// Parse IDX

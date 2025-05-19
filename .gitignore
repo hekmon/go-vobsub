@@ -25,4 +25,4 @@ go.work.sum
 .env
 
 # dev
-/dev_const.go
+/dev/*
