@@ -10,7 +10,7 @@ const (
 	StartCodeMarker    = 0x000001
 )
 
-type StartCodeHeader [4]byte
+type StartCodeHeader [StartCodeHeaderLen]byte
 
 func (sch StartCodeHeader) Validate() error {
 	if binary.BigEndian.Uint32(sch[:])>>8 != StartCodeMarker {

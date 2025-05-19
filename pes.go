@@ -7,157 +7,178 @@ import (
 )
 
 const (
-	// Main headers fields
-	PESHeaderLen = 6
-	PESStart     = 0x000001
-	// Optional headers fields
-	PESOptionalHeadersLen    = 3
-	PESOptionalHeadersMarker = 0x2
+	PESPacketLen       = 2
+	PESExtensionLen    = 3
+	PESExtensionMarker = 0x2
 )
 
-// https://en.wikipedia.org/wiki/Packetized_elementary_stream#PES_packet_header
-type PESHeaders [PESHeaderLen + PESOptionalHeadersLen]byte
-
-// Valid checks if the PES start code is present at the start of the headers.
-func (ph PESHeaders) Valid() bool {
-	return ph[0] == byte((PESStart>>16)&0xFF) && ph[1] == byte((PESStart>>8)&0xFF) && ph[2] == byte(PESStart&0xFF)
+type PESHeader struct {
+	StartCodeHeader StartCodeHeader
+	PacketLength    [PESPacketLen]byte
+	// Extension
+	Extension     *PESExtension
+	ExtensionData []byte
 }
 
-func (ph PESHeaders) StreamID() StreamID {
-	return StreamID(ph[3])
-}
-
-func (ph PESHeaders) PacketLength() int64 {
-	return 4 + int64(binary.LittleEndian.Uint16(ph[4:6]))
-}
-
-func (ph PESHeaders) DataOffset() int64 {
-	return PESHeaderLen + PESOptionalHeadersLen + ph.OptionalHeaders().RemainingHeaderLength()
-}
-
-func (ph PESHeaders) OptionalHeaders() PESOptionalHeaders {
-	return PESOptionalHeaders(ph[PESHeaderLen:])
-}
-
-func (ph PESHeaders) String() string {
-	if !ph.Valid() {
-		return "<invalid PES headers>"
+func (pesh PESHeader) Validate() (err error) {
+	if err = pesh.StartCodeHeader.Validate(); err != nil {
+		return fmt.Errorf("invalid PES header: invalid start code: %w", err)
 	}
-	var repr strings.Builder
-	repr.WriteString(fmt.Sprintf("<StreamID=%s, PacketLength=%d, OptionalHeaders=", ph.StreamID(), ph.PacketLength()))
-	opt := ph.OptionalHeaders()
-	if opt.Valid() {
-		repr.WriteString(opt.String())
+	if pesh.Extension != nil {
+		if err = pesh.Extension.Validate(); err != nil {
+			return fmt.Errorf("invalid PES header: invalid extension: %w", err)
+		}
+	}
+	return nil
+}
+
+func (pesh PESHeader) GetPacketLength() uint16 {
+	return binary.BigEndian.Uint16(pesh.PacketLength[:])
+}
+
+func (pesh PESHeader) GetFullPacketLength() int64 {
+	return int64(len(pesh.StartCodeHeader) + int(pesh.GetPacketLength()))
+}
+
+func (pesh PESHeader) String() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %s, PacketLength: %d, Extension: ",
+		pesh.StartCodeHeader, pesh.GetPacketLength()))
+	if pesh.Extension != nil {
+		builder.WriteString(pesh.Extension.String())
 	} else {
-		repr.WriteString("<invalid>")
+		builder.WriteString("<nil>")
 	}
-	repr.WriteString(">")
-	return repr.String()
+	builder.WriteString("}")
+	return builder.String()
 }
 
-func (ph PESHeaders) GoString() string {
-	if !ph.Valid() {
-		return "<invalid PES headers>"
-	}
-	var repr strings.Builder
-	repr.WriteString(fmt.Sprintf("<StreamID=0x%02X, PacketLength=%d, OptionalHeaders=", byte(ph.StreamID()), ph.PacketLength()))
-	opt := ph.OptionalHeaders()
-	if opt.Valid() {
-		repr.WriteString(opt.GoString())
+func (pesh PESHeader) GoString() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %#v, PacketLength: %08b%08b, Extension: ",
+		pesh.StartCodeHeader, byte(pesh.PacketLength[0]), byte(pesh.PacketLength[1])))
+	if pesh.Extension != nil {
+		builder.WriteString(pesh.Extension.GoString())
 	} else {
-		repr.WriteString("<invalid>")
+		builder.WriteString("<nil>")
 	}
-	repr.WriteString(">")
-	return repr.String()
+	builder.WriteString("}")
+	return builder.String()
 }
 
 // https://en.wikipedia.org/wiki/Packetized_elementary_stream#Optional_PES_header
-type PESOptionalHeaders [PESOptionalHeadersLen]byte
+type PESExtension [PESExtensionLen]byte
 
 // Valid checks if the optional header marker is present at the start of the optional headers.
-func (poh PESOptionalHeaders) Valid() bool {
-	return poh[0]>>6 == PESOptionalHeadersMarker
+func (poh PESExtension) Validate() error {
+	if poh[0]>>6 != PESExtensionMarker {
+		return fmt.Errorf("invalid PES extension header marker: expected 0x%02X, got 0x%02X", PESExtensionMarker, poh[0]>>6)
+	}
+	// Calculate extra data len
+	var expectedDataLen int64
+	if poh.DTSPresent() {
+		expectedDataLen += 5
+	}
+	if poh.PTSPresent() {
+		expectedDataLen += 5
+	}
+	if poh.ElementaryStreamClockReferencePresent() {
+		expectedDataLen += 6
+	}
+	if poh.ESRatePresent() {
+		expectedDataLen += 3
+	}
+	if poh.AdditionalCopyInfoPresent() {
+		expectedDataLen += 1
+	}
+	if poh.CRCPresent() {
+		expectedDataLen += 2
+	}
+	if poh.SecondExtensionPresent() {
+		expectedDataLen += 1 // headers
+		// TODO check flags for second extension and calculate length
+	}
+	if poh.RemainingHeaderLength() != expectedDataLen {
+		return fmt.Errorf("invalid PES extension header length: expected %d, got %d", expectedDataLen, poh.RemainingHeaderLength())
+	}
+	return nil
 }
 
 // ScramblingControl returns the scrambling value. Check the related constants.
-func (poh PESOptionalHeaders) ScramblingControl() ScramblingControl {
+func (poh PESExtension) ScramblingControl() ScramblingControl {
 	return ScramblingControl((poh[0] & 0b00110000) >> 4)
 }
 
 // Priority returns true if the priority bit is set to 1, indicating that the PES packet has higher priority than other packets in the same PID. false = Normal priority, true = High priority.
-func (poh PESOptionalHeaders) HighPriority() bool {
+func (poh PESExtension) HighPriority() bool {
 	return (poh[0]&0b00001000)>>3 == 1
 }
 
 // DataAligned returns true if the data alignment indicator is set to 1, indicating that the payload starts with a byte-aligned elementary stream. false = Not aligned, true = Aligned.
-func (poh PESOptionalHeaders) DataAligned() bool {
+func (poh PESExtension) DataAligned() bool {
 	return (poh[0]&0b00000100)>>2 == 1
 }
 
 // Copyright returns true if the copyright bit is set to 1, indicating that the PES packet contains copyrighted material. false = Not copyrighted, true = Copyrighted.
-func (poh PESOptionalHeaders) Copyright() bool {
+func (poh PESExtension) Copyright() bool {
 	return (poh[0]&0b00000010)>>1 == 1
 }
 
 // Original returns true if the original bit is set to 1, indicating that the PES packet contains original material. false = Copy, true = Original.
-func (poh PESOptionalHeaders) Original() bool {
+func (poh PESExtension) Original() bool {
 	return poh[0]&0b00000001 == 1
 }
 
-func (poh PESOptionalHeaders) PTSDTSPresence() PTSDTSPresence {
+func (poh PESExtension) PTSDTSPresence() PTSDTSPresence {
 	return PTSDTSPresence(poh[1] >> 6)
 }
 
-func (poh PESOptionalHeaders) PTSPresent() bool {
+func (poh PESExtension) PTSPresent() bool {
 	return poh.PTSDTSPresence()&JustPTS != 0
 }
 
-func (poh PESOptionalHeaders) DTSPresent() bool {
+func (poh PESExtension) DTSPresent() bool {
 	return poh.PTSDTSPresence()&JustDTS != 0
 }
 
-func (poh PESOptionalHeaders) ESCR() bool {
+func (poh PESExtension) ElementaryStreamClockReferencePresent() bool {
 	return (poh[1]&0b00100000)>>5 == 1
 }
 
-func (poh PESOptionalHeaders) ESRate() bool {
+func (poh PESExtension) ESRatePresent() bool {
 	return (poh[1]&0b00010000)>>4 == 1
 }
 
-func (poh PESOptionalHeaders) DSMTrickMode() bool {
+func (poh PESExtension) DSMTrickMode() bool {
 	return (poh[1]&0b00001000)>>3 == 1
 }
 
-func (poh PESOptionalHeaders) AdditionalCopyInfo() bool {
+func (poh PESExtension) AdditionalCopyInfoPresent() bool {
 	return (poh[1]&0b00000100)>>2 == 1
 }
 
-func (poh PESOptionalHeaders) CRC() bool {
+func (poh PESExtension) CRCPresent() bool {
 	return (poh[1]&0b00000010)>>1 == 1
 }
 
-func (poh PESOptionalHeaders) Extension() bool {
+func (poh PESExtension) SecondExtensionPresent() bool {
 	return poh[1]&0b00000001 == 1
 }
 
-func (poh PESOptionalHeaders) RemainingHeaderLength() int64 {
-	if poh.Valid() {
-		fmt.Printf("Remaining header lenght: %08b\n", poh[2])
-		return int64(poh[2])
-	}
-	return 0
+func (poh PESExtension) RemainingHeaderLength() int64 {
+	return int64(poh[2])
 }
 
 // String implements the fmt.Stringer interface.
 // It returns a string that represents the value of the receiver in a form suitable for printing.
 // See https://pkg.go.dev/fmt#Stringer
-func (poh PESOptionalHeaders) String() string {
-	if !poh.Valid() {
-		return "<invalid PES optional headers>"
+func (poh PESExtension) String() string {
+	if err := poh.Validate(); err != nil {
+		return fmt.Sprintf("<invalid PES optional headers: %s>", err)
 	}
-	return fmt.Sprintf("<ScramblingControl: %s | HighPriority: %v | DataAligned: %v | Copyright: %v | Original: %v | PTSDTSPresence: %s | ESCR: %v | ESRate: %v | DSMTrickMode: %v | AdditionalCopyInfo: %v | CRC: %v | Extension: %v | RemainingHeaderLength: %d>",
+	return fmt.Sprintf("PESExtension{ScramblingControl: %#v, HighPriority: %v, DataAligned: %v, Copyright: %v, Original: %v, PTSDTSPresence: %#v, ElementaryStreamClockReference: %v, ESRate: %v, DSMTrickMode: %v, AdditionalCopyInfo: %v, CRC: %v, SecondExtension: %v, RemainingHeaderLength: %d}",
 		poh.ScramblingControl(), poh.HighPriority(), poh.DataAligned(), poh.Copyright(), poh.Original(),
-		poh.PTSDTSPresence(), poh.ESCR(), poh.ESRate(), poh.DSMTrickMode(), poh.AdditionalCopyInfo(), poh.CRC(), poh.Extension(),
+		poh.PTSDTSPresence(), poh.ElementaryStreamClockReferencePresent(), poh.ESRatePresent(), poh.DSMTrickMode(), poh.AdditionalCopyInfoPresent(), poh.CRCPresent(), poh.SecondExtensionPresent(),
 		poh.RemainingHeaderLength(),
 	)
 }
@@ -165,7 +186,7 @@ func (poh PESOptionalHeaders) String() string {
 // GoString implements the fmt.GoStringer interface.
 // It returns a string that represents the value of the receiver in a form suitable for debugging.
 // See https://pkg.go.dev/fmt#GoStringer
-func (poh PESOptionalHeaders) GoString() string {
+func (poh PESExtension) GoString() string {
 	return fmt.Sprintf("%08b %08b %08b", poh[0], poh[1], poh[2])
 }
 

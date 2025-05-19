@@ -58,16 +58,35 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 	fmt.Println(ph.String())
 	fmt.Println(ph.GoString())
 	cursor += int64(len(ph.Remaining)) + ph.StuffingBytesLength()
-	// Next read the PES headers
-	var pes PESHeaders
-	if _, err = fd.ReadAt(pes[:], cursor); err != nil {
+	// Next read the PES header
+	var pes PESHeader
+	if _, err = fd.ReadAt(pes.StartCodeHeader[:], cursor); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)
 		return
 	}
-	if !pes.Valid() {
-		err = fmt.Errorf("invalid PES header")
+	if err = pes.StartCodeHeader.Validate(); err != nil {
+		err = fmt.Errorf("invalid PES header: invalid start code: %w", err)
 		return
 	}
+	if pes.StartCodeHeader.StreamID() != 0xBD {
+		// We expect a Private stream 1 streamid (for subtitles)
+		err = fmt.Errorf("unexpected PES stream ID: 0x%02X (expecting 0xBD)", byte(pes.StartCodeHeader.StreamID()))
+		return
+	}
+	cursor += int64(len(pes.StartCodeHeader))
+	//// Read PES packet length
+	if _, err = fd.ReadAt(pes.PacketLength[:], cursor); err != nil {
+		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		return
+	}
+	cursor += int64(len(pes.PacketLength))
+	//// 0xBD stream type has PES header extension, read it
+	pes.Extension = new(PESExtension)
+	if _, err = fd.ReadAt(pes.Extension[:], cursor); err != nil {
+		err = fmt.Errorf("failed to read PES extension header: %w", err)
+		return
+	}
+
 	fmt.Println(pes.String())
 	fmt.Println(pes.GoString())
 	return
