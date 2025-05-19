@@ -268,5 +268,17 @@ func (pesh PESHeader) ParseExtensionData() (ped PESExtensionData, err error) {
 	}
 	// TODO: Implement parsing of extension data
 	// https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	// PTS
+	// DTS
+	// ESCR
+	// ES rate
+	// additional copy info
+	// PES CRC
+	// PES extension flag
+	//// PES private data flag
+	//// pack header field flag
+	//// program packet sequence counter flag
+	//// P-STD buffer flag
+	//// PES extension flag 2
 	return
 }
