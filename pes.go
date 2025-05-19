@@ -60,7 +60,7 @@ func (ph PESHeaders) GoString() string {
 		return "<invalid PES headers>"
 	}
 	var repr strings.Builder
-	repr.WriteString(fmt.Sprintf("<StreamID=%#v, PacketLength=%d, OptionalHeaders=", ph.StreamID(), ph.PacketLength()))
+	repr.WriteString(fmt.Sprintf("<StreamID=0x%02X, PacketLength=%d, OptionalHeaders=", byte(ph.StreamID()), ph.PacketLength()))
 	opt := ph.OptionalHeaders()
 	if opt.Valid() {
 		repr.WriteString(opt.GoString())

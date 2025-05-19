@@ -27,7 +27,7 @@ func ReadVobSub(subFile string) (err error) {
 }
 
 func parseStream(fd *os.File, startAt int64) (err error) {
-	// Read Start code
+	// Read Start code and verify it is a pack header
 	cursor := startAt
 	var sch StartCodeHeader
 	if _, err = fd.ReadAt(sch[:], cursor); err != nil {
@@ -42,8 +42,8 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		err = fmt.Errorf("unexpected stream ID: %s", sch.StreamID())
 		return
 	}
-	// We do have a pack header, read it fully
 	cursor += int64(len(sch))
+	// We do have a pack header, read it fully
 	ph := PackHeader{
 		StartCodeHeader: sch,
 	}
@@ -57,8 +57,8 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 	}
 	fmt.Println(ph.String())
 	fmt.Println(ph.GoString())
-	// Next read the PES headers
 	cursor += int64(len(ph.Remaining)) + ph.StuffingBytesLength()
+	// Next read the PES headers
 	var pes PESHeaders
 	if _, err = fd.ReadAt(pes[:], cursor); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)

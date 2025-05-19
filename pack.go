@@ -8,7 +8,7 @@ import (
 // https://dvd.sourceforge.net/dvdinfo/packhdr.html
 
 const (
-	PackHeaderLen      = StartCodeHeaderLen + PackHeaderExtraLen
+	// PackHeaderLen      = StartCodeHeaderLen + PackHeaderExtraLen
 	PackHeaderExtraLen = 10
 )
 
@@ -94,7 +94,7 @@ func (ph PackHeader) GoString() string {
 const (
 	MaxSCRValue          = (1 << 33) - 1 // 33-bit maximum
 	MaxSCRExtValue       = (1 << 9) - 1  // 9-bit maximum
-	SCRClockFrequency    = 27_000_000    // 27 MHz clock frequency
+	SCRClockFrequency    = 27_000_000    // 27 MHz clock frequency used for SCR
 	PTSDTSClockFrequency = 90_000        // 90 kHz clock frequency for PTS and DTS
 )
 
