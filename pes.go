@@ -43,7 +43,7 @@ func (pesh PESHeader) GetFullPacketLength() int64 {
 func (pesh PESHeader) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %s, PacketLength: %d, Extension: ",
-		pesh.StartCodeHeader, pesh.GetPacketLength()))
+		pesh.StartCodeHeader, pesh.GetFullPacketLength()))
 	if pesh.Extension != nil {
 		builder.WriteString(pesh.Extension.String())
 	} else {
@@ -246,3 +246,5 @@ func (ptd PTSDTSPresence) String() string {
 func (ptd PTSDTSPresence) GoString() string {
 	return fmt.Sprintf("%s (%02b)", ptd.String(), ptd)
 }
+
+type PESExtensionData []byte
