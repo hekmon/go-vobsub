@@ -80,7 +80,7 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		return
 	}
 	if pes.StartCodeHeader.StreamID() != 0xBD {
-		// We expect a Private stream 1 streamid (for subtitles)
+		// We expect a Private stream 1 StreamID (for subtitles)
 		err = fmt.Errorf("unexpected PES stream ID: 0x%02X (expecting 0xBD)", byte(pes.StartCodeHeader.StreamID()))
 		return
 	}
@@ -104,24 +104,22 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		return
 	}
 	cursor += int64(len(pes.ExtensionData))
-	//// Read sub stream id for private streams (we are one)
-	if pes.StartCodeHeader.StreamID() == 0xBD || pes.StartCodeHeader.StreamID() == 0xBF {
-		if _, err = fd.ReadAt(pes.SubStreamID[:], cursor); err != nil {
-			err = fmt.Errorf("failed to read sub stream id: %w", err)
-			return
-		}
-		cursor += int64(len(pes.SubStreamID))
-	} else {
-		err = fmt.Errorf("we should be a private stream, but we are not!? stream id: 0x%02x", byte(pes.StartCodeHeader.StreamID()))
+	//// Read sub stream id for private streams (we are one: 0xBD)
+	if _, err = fd.ReadAt(pes.SubStreamID[:], cursor); err != nil {
+		err = fmt.Errorf("failed to read sub stream id: %w", err)
 		return
 	}
-	//// Read payload
+	cursor += int64(len(pes.SubStreamID))
+	//// Headers done
 	fmt.Println(pes.String())
 	fmt.Println(pes.GoString())
+	// Payload
+	buffer := make([]byte, 128)
+	if _, err = fd.ReadAt(buffer, cursor); err != nil {
+		err = fmt.Errorf("failed to read payload beginning: %w", err)
+		return
+	}
+	fmt.Printf("Payload beginning: %08b\n", buffer)
+	//// DEBUG
 	return
 }
-
-/*
-00100000 00001001 10111000 00001001 10011010
-00100000 00001111 11101000 00001111 11001010
-*/

@@ -257,5 +257,3 @@ func (ptd PTSDTSPresence) String() string {
 func (ptd PTSDTSPresence) GoString() string {
 	return fmt.Sprintf("%s (%02b)", ptd.String(), ptd)
 }
-
-type PESExtensionData []byte
