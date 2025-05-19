@@ -2,6 +2,7 @@ package vobsub
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -256,4 +257,16 @@ func (ptd PTSDTSPresence) String() string {
 
 func (ptd PTSDTSPresence) GoString() string {
 	return fmt.Sprintf("%s (%02b)", ptd.String(), ptd)
+}
+
+type PESExtensionData struct{}
+
+func (pesh PESHeader) ParseExtensionData() (ped PESExtensionData, err error) {
+	if pesh.Extension == nil {
+		err = errors.New("no extension headers found")
+		return
+	}
+	// TODO: Implement parsing of extension data
+	// https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	return
 }
