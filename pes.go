@@ -7,9 +7,10 @@ import (
 )
 
 const (
-	PESPacketLen       = 2
-	PESExtensionLen    = 3
-	PESExtensionMarker = 0x2
+	PESPacketLen                   = 2
+	PESExtensionLen                = 3
+	PESExtensionMarker             = 0x2
+	PESPrivateStreamSubStreamIDLen = 1
 )
 
 type PESHeader struct {
@@ -18,6 +19,8 @@ type PESHeader struct {
 	// Extension
 	Extension     *PESExtension
 	ExtensionData []byte
+	// Only for private streams (StreamID == 0xBD or 0xBF)
+	SubStreamID [PESPrivateStreamSubStreamIDLen]byte
 }
 
 func (pesh PESHeader) Validate() (err error) {
@@ -49,6 +52,10 @@ func (pesh PESHeader) String() string {
 	} else {
 		builder.WriteString("<nil>")
 	}
+	if pesh.StartCodeHeader.StreamID() == 0xBD || pesh.StartCodeHeader.StreamID() == 0xBF {
+		// Private stream, print sub stream id too
+		builder.WriteString(fmt.Sprintf(", SubStreamID: 0x%02x", pesh.SubStreamID[0]))
+	}
 	builder.WriteString("}")
 	return builder.String()
 }
@@ -61,6 +68,10 @@ func (pesh PESHeader) GoString() string {
 		builder.WriteString(pesh.Extension.GoString())
 	} else {
 		builder.WriteString("<nil>")
+	}
+	if pesh.StartCodeHeader.StreamID() == 0xBD || pesh.StartCodeHeader.StreamID() == 0xBF {
+		// Private stream, print sub stream id too
+		builder.WriteString(fmt.Sprintf(", SubStreamID: %08b", pesh.SubStreamID[0]))
 	}
 	builder.WriteString("}")
 	return builder.String()

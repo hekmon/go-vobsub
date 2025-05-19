@@ -30,6 +30,10 @@ func ReadVobSub(subFile string) (err error) {
 	if err = parseStream(fd, 0x000001000); err != nil {
 		return
 	}
+	fmt.Println()
+	if err = parseStream(fd, 0x000002800); err != nil {
+		return
+	}
 	return
 }
 
@@ -100,19 +104,20 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		return
 	}
 	cursor += int64(len(pes.ExtensionData))
-	//// Read payload
-	endPosition := startAt + int64(len(ph.StartCodeHeader)+len(ph.Remaining)) + pes.GetFullPacketLength()
-	fmt.Printf("PES payload start position: %d\n", cursor)
-	fmt.Printf("PES payload end position: %d\n", endPosition)
-	fmt.Printf("PES payload length: %d\n", endPosition-cursor)
-	buffer := make([]byte, endPosition-cursor)
-	if _, err = fd.ReadAt(buffer, cursor); err != nil {
-		err = fmt.Errorf("failed to read PES payload: %w", err)
+	//// Read sub stream id for private streams (we are one)
+	if pes.StartCodeHeader.StreamID() == 0xBD || pes.StartCodeHeader.StreamID() == 0xBF {
+		if _, err = fd.ReadAt(pes.SubStreamID[:], cursor); err != nil {
+			err = fmt.Errorf("failed to read sub stream id: %w", err)
+			return
+		}
+		cursor += int64(len(pes.SubStreamID))
+	} else {
+		err = fmt.Errorf("we should be a private stream, but we are not!? stream id: 0x%02x", byte(pes.StartCodeHeader.StreamID()))
 		return
 	}
-	fmt.Printf("PES payload: %08b\n", buffer)
-	// fmt.Println(pes.String())
-	// fmt.Println(pes.GoString())
+	//// Read payload
+	fmt.Println(pes.String())
+	fmt.Println(pes.GoString())
 	return
 }
 
