@@ -3,7 +3,6 @@ package vobsub
 import (
 	"encoding/binary"
 	"fmt"
-	"os"
 	"strings"
 )
 
@@ -15,44 +14,6 @@ const (
 	PESOptionalHeadersLen    = 3
 	PESOptionalHeadersMarker = 0x2
 )
-
-func parsePESPacket(fd *os.File, startAt int64) (err error) {
-	// Read header
-	buffer := make([]byte, PESHeaderLen+PESOptionalHeadersLen)
-	if _, err = fd.ReadAt(buffer, startAt); err != nil {
-		err = fmt.Errorf("failed to read PES header: %w", err)
-		return
-	}
-	headers, err := parsePESHeaders(buffer)
-	if err != nil {
-		err = fmt.Errorf("failed to parse PES headers: %w", err)
-		return
-	}
-	fmt.Printf("Parsed PES Headers: %s\n", headers)
-	// Read data
-	buffer = make([]byte, 0x000001000)
-	if _, err = fd.ReadAt(buffer, startAt); err != nil {
-		err = fmt.Errorf("failed to read PES header: %w", err)
-		return
-	}
-	fmt.Printf("Packet: %x\n", buffer)
-	fmt.Printf("Packet len: buffer size: %d  packet length: %d\n", len(buffer), headers.PacketLength())
-	fmt.Printf("Stuffing: %x\n", buffer[headers.PacketLength()-2:])
-	return
-}
-
-func parsePESHeaders(data []byte) (headers PESHeaders, err error) {
-	if len(data) != len(headers) {
-		err = fmt.Errorf("data too short for PES headers: %d bytes must be %d", len(data), len(headers))
-		return
-	}
-	copy(headers[:], data)
-	if !headers.Valid() {
-		err = fmt.Errorf("invalid PES headers (no PESStart code found in headers): %x", headers)
-		return
-	}
-	return
-}
 
 // https://en.wikipedia.org/wiki/Packetized_elementary_stream#PES_packet_header
 type PESHeaders [PESHeaderLen + PESOptionalHeadersLen]byte

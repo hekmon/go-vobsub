@@ -12,8 +12,19 @@ const (
 
 type StartCodeHeader [4]byte
 
-func (sch StartCodeHeader) Valid() bool {
-	return binary.BigEndian.Uint32(sch[:])>>1 == StartCodeMarker
+func (sch StartCodeHeader) Validate() error {
+	if binary.BigEndian.Uint32(sch[:])>>8 != StartCodeMarker {
+		return fmt.Errorf("invalid start code marker: %x (expected %x)", sch, StartCodeMarker)
+	}
+	return nil
+}
+
+func (sch StartCodeHeader) String() string {
+	return fmt.Sprintf("StartCodeHeader{Marker: %06x, StreamID: %s}", binary.BigEndian.Uint32(sch[:])>>8, sch.StreamID())
+}
+
+func (sch StartCodeHeader) GoString() string {
+	return fmt.Sprintf("%06b 0x%02X", binary.BigEndian.Uint32(sch[:])>>8, byte(sch.StreamID()))
 }
 
 func (sch StartCodeHeader) StreamID() StreamID {
