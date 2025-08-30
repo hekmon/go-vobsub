@@ -14,6 +14,18 @@ const (
 func ReadVobSub(subFile string) (err error) {
 	// Parse IDX
 	//// TODO
+	// Parse Sub
+	subtitlesPackets, err := readSubFile(subFile)
+	if err != nil {
+		err = fmt.Errorf("failed to read .sub file: %w", err)
+		return
+	}
+	// Handles subtitles packets
+	fmt.Printf("Got %d subtitles packets\n", len(subtitlesPackets))
+	return
+}
+
+func readSubFile(subFile string) (subtitlesPackets []PESPacket, err error) {
 	// Open the binary sub file
 	fd, err := os.Open(subFile)
 	if err != nil {
@@ -21,36 +33,18 @@ func ReadVobSub(subFile string) (err error) {
 		return
 	}
 	defer fd.Close()
-	// // Parse each packet
-	// packet1 := make([]byte, 0x000001000)
-	// if _, err = fd.ReadAt(packet1, 0); err != nil {
-	// 	err = fmt.Errorf("failed to read PES 1st packet: %w", err)
-	// 	return
-	// }
-	// fmt.Printf("packet1: %08b\n", packet1) // Debugging line
-	// fmt.Println()
-
-	// if err = parseStream(fd, 0); err != nil {
-	// 	return
-	// }
-	// fmt.Println()
-	// if err = parseStream(fd, 0x000001000); err != nil {
-	// 	return
-	// }
-	// fmt.Println()
-	// if err = parseStream(fd, 0x000002800); err != nil {
-	// 	return
-	// }
-
 	var (
 		nextAt int64
-		// packet PESPacket
+		packet PESPacket
 	)
 	for nextAt >= 0 {
 		fmt.Println("next packet at cursor", nextAt)
-		if _, nextAt, err = parsePacket(fd, nextAt); err != nil {
+		if packet, nextAt, err = parsePacket(fd, nextAt); err != nil {
 			err = fmt.Errorf("failed to parse packet: %w", err)
 			return
+		}
+		if packet.Header.StartCodeHeader.StreamID() == StreamIDPrivateStream1 {
+			subtitlesPackets = append(subtitlesPackets, packet)
 		}
 		fmt.Println()
 	}
