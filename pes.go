@@ -53,7 +53,8 @@ func (pesh PESHeader) String() string {
 	} else {
 		builder.WriteString("<nil>")
 	}
-	if pesh.StartCodeHeader.StreamID() == 0xBD || pesh.StartCodeHeader.StreamID() == 0xBF {
+	if pesh.StartCodeHeader.StreamID() == PrivateStream1ID ||
+		pesh.StartCodeHeader.StreamID() == PrivateStream2ID {
 		// Private stream, print sub stream id too
 		builder.WriteString(fmt.Sprintf(", SubStreamID: 0x%02x", pesh.SubStreamID[0]))
 	}
@@ -70,7 +71,8 @@ func (pesh PESHeader) GoString() string {
 	} else {
 		builder.WriteString("<nil>")
 	}
-	if pesh.StartCodeHeader.StreamID() == 0xBD || pesh.StartCodeHeader.StreamID() == 0xBF {
+	if pesh.StartCodeHeader.StreamID() == PrivateStream1ID ||
+		pesh.StartCodeHeader.StreamID() == PrivateStream2ID {
 		// Private stream, print sub stream id too
 		builder.WriteString(fmt.Sprintf(", SubStreamID: %08b", pesh.SubStreamID[0]))
 	}

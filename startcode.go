@@ -24,7 +24,7 @@ func (sch StartCodeHeader) String() string {
 }
 
 func (sch StartCodeHeader) GoString() string {
-	return fmt.Sprintf("%06b 0x%02X", binary.BigEndian.Uint32(sch[:])>>8, byte(sch.StreamID()))
+	return fmt.Sprintf("StartCodeHeader{Marker:%06b StreamID: 0x%02X}", binary.BigEndian.Uint32(sch[:])>>8, byte(sch.StreamID()))
 }
 
 func (sch StartCodeHeader) StreamID() StreamID {
@@ -64,11 +64,11 @@ func (sid StreamID) String() string {
 		return "System Header"
 	case sid == 0xBC:
 		return "Program Stream Map"
-	case sid == 0xBD: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	case sid == PrivateStream1ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 1"
 	case sid == 0xBE: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Padding stream"
-	case sid == 0xBF: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	case sid == PrivateStream2ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 2"
 	case sid >= 0xC0 && sid <= 0xDF: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "MPEG-1 or MPEG-2 audio stream"

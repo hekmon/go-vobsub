@@ -10,6 +10,9 @@ import (
 const (
 	// PackHeaderLen      = StartCodeHeaderLen + PackHeaderExtraLen
 	PackHeaderExtraLen = 10
+
+	PrivateStream1ID = 0xBD
+	PrivateStream2ID = 0xBF
 )
 
 type PackHeader struct {
@@ -78,13 +81,13 @@ func (ph PackHeader) StuffingBytesLength() int64 {
 }
 
 func (ph PackHeader) String() string {
-	return fmt.Sprintf("PackHeader{StartCode: %s, SCR: %s, ProgramMuxRate: %d, StuffingBytesLength: %d}",
+	return fmt.Sprintf("PackHeader{%s, SCR: %s, ProgramMuxRate: %d, StuffingBytesLength: %d}",
 		ph.StartCodeHeader, ph.SystemClockReference(), ph.ProgramMuxRate(), ph.StuffingBytesLength(),
 	)
 }
 
 func (ph PackHeader) GoString() string {
-	return fmt.Sprintf("%s  %08b %08b %08b %08b %08b %08b  %08b %08b %08b  %08b",
+	return fmt.Sprintf("PackHeader{%s  PackHeader{%08b %08b %08b %08b %08b %08b  %08b %08b %08b  %08b}}",
 		ph.StartCodeHeader.GoString(),
 		ph.Remaining[0], ph.Remaining[1], ph.Remaining[2], ph.Remaining[3], ph.Remaining[4], ph.Remaining[5],
 		ph.Remaining[6], ph.Remaining[7], ph.Remaining[8], ph.Remaining[9],

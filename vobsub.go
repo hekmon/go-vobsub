@@ -68,6 +68,8 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		return
 	}
 	cursor += ph.StuffingBytesLength()
+	fmt.Println(ph.String())
+	fmt.Println(ph.GoString())
 	// Next read the PES header
 	var pes PESHeader
 	if _, err = fd.ReadAt(pes.StartCodeHeader[:], cursor); err != nil {
@@ -79,9 +81,10 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		err = fmt.Errorf("invalid PES header: invalid start code: %w", err)
 		return
 	}
-	if pes.StartCodeHeader.StreamID() != 0xBD {
+	if pes.StartCodeHeader.StreamID() != PrivateStream1ID {
 		// We expect a Private stream 1 StreamID (for subtitles)
-		err = fmt.Errorf("unexpected PES stream ID: 0x%02X (expecting 0xBD)", byte(pes.StartCodeHeader.StreamID()))
+		err = fmt.Errorf("unexpected PES stream ID: 0x%02X (expecting 0x%02x)",
+			byte(pes.StartCodeHeader.StreamID()), PrivateStream1ID)
 		return
 	}
 	//// Read PES packet length
@@ -104,7 +107,7 @@ func parseStream(fd *os.File, startAt int64) (err error) {
 		return
 	}
 	cursor += int64(len(pes.ExtensionData))
-	//// Read sub stream id for private streams (we are one: 0xBD)
+	//// Read sub stream id for private streams (we are one, checked earlier we are PESStreamIDPrivateStream1)
 	if _, err = fd.ReadAt(pes.SubStreamID[:], cursor); err != nil {
 		err = fmt.Errorf("failed to read sub stream id: %w", err)
 		return
