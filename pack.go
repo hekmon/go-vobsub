@@ -21,8 +21,8 @@ func (ph PackHeader) Validate() error {
 		return err
 	}
 	// Validate the PACK identifier
-	if ph.StartCodeHeader[3] != StreamIDPackerHeader {
-		return fmt.Errorf("invalid PACK identifier: %08b (expected %08b)", ph.StartCodeHeader[3], StreamIDPackerHeader)
+	if ph.StartCodeHeader[3] != StreamIDPackHeader {
+		return fmt.Errorf("invalid PACK identifier: %08b (expected %08b)", ph.StartCodeHeader[3], StreamIDPackHeader)
 	}
 	// Check for fixed bits in the SCR 6 first bytes
 	if ph.Remaining[0]>>6 != 0b01 {

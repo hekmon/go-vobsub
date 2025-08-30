@@ -8,10 +8,11 @@ import (
 const (
 	StartCodeMarker = 0x000001
 
-	StreamIDPackerHeader  = 0xBA
-	PrivateStream1ID      = 0xBD
-	StreamIDPaddingStream = 0xBE
-	PrivateStream2ID      = 0xBF
+	StreamIDPackHeader     = 0xBA
+	StreamIDPrivateStream1 = 0xBD
+	StreamIDPaddingStream  = 0xBE
+	StreamIDPrivateStream2 = 0xBF
+	StreamIDProgramEnd     = 0xB9
 )
 
 type StartCodeHeader [4]byte
@@ -60,19 +61,19 @@ func (sid StreamID) String() string {
 		return "sequence end"
 	case sid == 0xB8: // https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html#gop
 		return "Group of Pictures"
-	case sid == 0xB9:
+	case sid == StreamIDProgramEnd:
 		return "Program end"
-	case sid == StreamIDPackerHeader: // https://dvd.sourceforge.net/dvdinfo/packhdr.html
+	case sid == StreamIDPackHeader: // https://dvd.sourceforge.net/dvdinfo/packhdr.html
 		return "Pack header"
 	case sid == 0xBB:
 		return "System Header"
 	case sid == 0xBC:
 		return "Program Stream Map"
-	case sid == PrivateStream1ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	case sid == StreamIDPrivateStream1: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 1"
 	case sid == StreamIDPaddingStream: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Padding stream"
-	case sid == PrivateStream2ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	case sid == StreamIDPrivateStream2: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 2"
 	case sid >= 0xC0 && sid <= 0xDF: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "MPEG-1 or MPEG-2 audio stream"

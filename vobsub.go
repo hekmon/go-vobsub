@@ -1,8 +1,14 @@
 package vobsub
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
+)
+
+const (
+	stopFlagValue = -1
 )
 
 func ReadVobSub(subFile string) (err error) {
@@ -40,14 +46,15 @@ func ReadVobSub(subFile string) (err error) {
 		nextAt int64
 		// packet PESPacket
 	)
-	for {
+	for nextAt >= 0 {
+		fmt.Println("next packet at cursor", nextAt)
 		if _, nextAt, err = parsePacket(fd, nextAt); err != nil {
 			err = fmt.Errorf("failed to parse packet: %w", err)
 			return
 		}
-		fmt.Println("next packet at cursor", nextAt)
 		fmt.Println()
 	}
+	return
 }
 
 func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt int64, err error) {
@@ -57,7 +64,13 @@ func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt i
 		nbRead int
 	)
 	if nbRead, err = fd.ReadAt(sch[:], currentPosition); err != nil {
-		err = fmt.Errorf("failed to read PES header: %w", err)
+		if errors.Is(err, io.EOF) {
+			// strange but seen in the wild
+			err = nil
+			nextAt = -1
+		} else {
+			err = fmt.Errorf("failed to read start code header: %w", err)
+		}
 		return
 	}
 	currentPosition += int64(nbRead)
@@ -67,15 +80,21 @@ func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt i
 	}
 	// Act depending on stream ID
 	switch sch.StreamID() {
-	case StreamIDPackerHeader:
+	case StreamIDPackHeader:
 		if packet, nextAt, err = parsePackHeader(fd, currentPosition, sch); err != nil {
 			err = fmt.Errorf("failed to parse Pack Header: %w", err)
 			return
 		}
 		return
-	// case StreamIDPaddingStream:
-	// 	// TODO
-	// 	return
+	case StreamIDPaddingStream:
+		if nextAt, err = parsePaddingStream(fd, currentPosition, sch); err != nil {
+			err = fmt.Errorf("failed to parse padding stream: %w", err)
+			return
+		}
+		return
+	case StreamIDProgramEnd:
+		nextAt = stopFlagValue
+		return
 	default:
 		err = fmt.Errorf("unexpected stream ID: %s", sch.StreamID())
 		return
@@ -99,7 +118,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	}
 	currentPosition += ph.StuffingBytesLength()
 	fmt.Println(ph.String())
-	fmt.Println(ph.GoString())
+	// fmt.Println(ph.GoString())
 	// Next read the PES header
 	var pes PESHeader
 	if nbRead, err = fd.ReadAt(pes.StartCodeHeader[:], currentPosition); err != nil {
@@ -119,7 +138,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
 	// Continue depending on stream ID
 	switch pes.StartCodeHeader.StreamID() {
-	case PrivateStream1ID:
+	case StreamIDPrivateStream1:
 		if packet, err = parsePESSubtitlePacket(fd, currentPosition, pes); err != nil {
 			err = fmt.Errorf("failed to parse subtitle stream (private stream 1) packet: %w", err)
 			return
@@ -157,12 +176,29 @@ func parsePESSubtitlePacket(fd *os.File, currentPosition int64, preHeader PESHea
 	currentPosition += int64(nbRead)
 	//// Headers done
 	fmt.Println(packet.Header.String())
-	fmt.Println(packet.Header.GoString())
+	// fmt.Println(packet.Header.GoString())
 	// Payload
 	packet.Payload = make([]byte, packet.Header.GetPacketLength()-len(*packet.Header.Extension)-len(packet.Header.ExtensionData)-len(packet.Header.SubStreamID))
 	if _, err = fd.ReadAt(packet.Payload, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read the payload: %w", err)
 		return
 	}
+	return
+}
+
+func parsePaddingStream(fd *os.File, currentPosition int64, sch StartCodeHeader) (nextPacketPosition int64, err error) {
+	var nbRead int
+	// Read the PES header used in padding
+	pes := PESHeader{
+		StartCodeHeader: sch,
+	}
+	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
+	//
+	fmt.Println("Padding len:", pes.GetPacketLength())
 	return
 }
