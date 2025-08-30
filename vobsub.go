@@ -198,7 +198,16 @@ func parsePaddingStream(fd *os.File, currentPosition int64, sch StartCodeHeader)
 	}
 	currentPosition += int64(nbRead)
 	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
-	//
-	fmt.Println("Padding len:", pes.GetPacketLength())
+	// // Debug
+	// fmt.Println("Padding len:", pes.GetPacketLength())
+	// buffer := make([]byte, pes.GetPacketLength())
+	// if _, err = fd.ReadAt(buffer, currentPosition); err != nil {
+	// 	err = fmt.Errorf("failed to read the payload: %w", err)
+	// 	return
+	// }
+	// for _, b := range buffer {
+	// 	fmt.Printf("0x%02x ", b) // all should be 0xff
+	// }
+	// fmt.Println()
 	return
 }
