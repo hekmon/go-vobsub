@@ -36,18 +36,14 @@ func (pesh PESHeader) Validate() (err error) {
 	return nil
 }
 
-func (pesh PESHeader) GetPacketLength() uint16 {
-	return binary.BigEndian.Uint16(pesh.PacketLength[:])
-}
-
-func (pesh PESHeader) GetFullPacketLength() int64 {
-	return int64(len(pesh.StartCodeHeader) + int(pesh.GetPacketLength()))
+func (pesh PESHeader) GetPacketLength() int{
+	return int(binary.BigEndian.Uint16(pesh.PacketLength[:]))
 }
 
 func (pesh PESHeader) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %s, PacketLength: %d, Extension: ",
-		pesh.StartCodeHeader, pesh.GetFullPacketLength()))
+		pesh.StartCodeHeader, pesh.GetPacketLength()))
 	if pesh.Extension != nil {
 		builder.WriteString(pesh.Extension.String())
 	} else {
