@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
-	PESPacketLen                   = 2
-	PESExtensionLen                = 3
-	PESExtensionMarker             = 0x2
-	PESPrivateStreamSubStreamIDLen = 1
+	PESPacketLen       = 2
+	PESExtensionLen    = 3
+	PESExtensionMarker = 0x2
 )
 
 type PESPacket struct {
@@ -24,7 +24,13 @@ type PESHeader struct {
 	PacketLength    [PESPacketLen]byte
 	Extension       *PESExtension
 	// Only for private streams (StreamID == 0xBD or 0xBF)
-	SubStreamID [PESPrivateStreamSubStreamIDLen]byte
+	SubStreamID SubStreamID
+}
+
+type SubStreamID [1]byte
+
+func (ssid SubStreamID) SubtitleID() int {
+	return int(ssid[0]) - 0x20
 }
 
 func (pesh PESHeader) Validate() (err error) {
@@ -428,4 +434,17 @@ func (pesed *PESExtensionData) Len() (length int) {
 	length += len(pesed.PSTD)
 	length += len(pesed.PESExtensionSecond)
 	return
+}
+
+func (pesed *PESExtensionData) ComputePTS() (pts time.Duration) {
+	if len(pesed.PTS) == 0 {
+		return
+	}
+	var ticks uint64
+	ticks |= (uint64(pesed.PTS[0]&0b00001110) >> 1) << 30
+	ticks |= uint64(pesed.PTS[1]) << 22
+	ticks |= (uint64(pesed.PTS[2]&0b11111110) >> 1) << 15
+	ticks |= uint64(pesed.PTS[3]) << 7
+	ticks |= uint64(pesed.PTS[4]&0b11111110) >> 1
+	return time.Duration(ticks * uint64(time.Second) / PTSDTSClockFrequency)
 }

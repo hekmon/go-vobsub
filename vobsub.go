@@ -15,17 +15,29 @@ func ReadVobSub(subFile string) (err error) {
 	// Parse IDX
 	//// TODO
 	// Parse Sub
-	subtitlesPackets, err := readSubFile(subFile)
+	privateStream1Packets, err := readSubFile(subFile)
 	if err != nil {
 		err = fmt.Errorf("failed to read .sub file: %w", err)
 		return
 	}
-	// Handles subtitles packets
-	fmt.Printf("Got %d subtitles packets\n", len(subtitlesPackets))
+	// Handles packets
+	fmt.Printf("Got %d packets\n", len(privateStream1Packets))
+	subtitlesPackets := make([]PESPacket, 0, len(privateStream1Packets))
+	for _, pkt := range privateStream1Packets {
+		if pkt.Header.Extension.Data.ComputePTS() != 0 {
+			subtitlesPackets = append(subtitlesPackets, pkt)
+		}
+	}
+	// Handles retained subtitles
+	for index, sub := range subtitlesPackets {
+		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Start: %s Payload: %d\n",
+			index+1, sub.Header.SubStreamID.SubtitleID(), sub.Header.Extension.Data.ComputePTS(), len(sub.Payload),
+		)
+	}
 	return
 }
 
-func readSubFile(subFile string) (subtitlesPackets []PESPacket, err error) {
+func readSubFile(subFile string) (privateStream1Packets []PESPacket, err error) {
 	// Open the binary sub file
 	fd, err := os.Open(subFile)
 	if err != nil {
@@ -44,7 +56,7 @@ func readSubFile(subFile string) (subtitlesPackets []PESPacket, err error) {
 			return
 		}
 		if packet.Header.StartCodeHeader.StreamID() == StreamIDPrivateStream1 {
-			subtitlesPackets = append(subtitlesPackets, packet)
+			privateStream1Packets = append(privateStream1Packets, packet)
 		}
 		fmt.Println()
 	}
@@ -133,7 +145,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	// Continue depending on stream ID
 	switch pes.StartCodeHeader.StreamID() {
 	case StreamIDPrivateStream1:
-		if packet, err = parsePESSubtitlePacket(fd, currentPosition, pes); err != nil {
+		if packet, err = parsePESPrivateStream1Packet(fd, currentPosition, pes); err != nil {
 			err = fmt.Errorf("failed to parse subtitle stream (private stream 1) packet: %w", err)
 			return
 		}
@@ -144,7 +156,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	}
 }
 
-func parsePESSubtitlePacket(fd *os.File, currentPosition int64, preHeader PESHeader) (packet PESPacket, err error) {
+func parsePESPrivateStream1Packet(fd *os.File, currentPosition int64, preHeader PESHeader) (packet PESPacket, err error) {
 	var nbRead int
 	packet.Header = preHeader
 	// Finish reading PES header
