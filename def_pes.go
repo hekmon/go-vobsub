@@ -266,7 +266,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// done
 		index += PTSSize
-		fmt.Println("PTS extracted !")
+		// fmt.Println("PTS extracted !")
 	}
 	if pesh.Extension.PTSDTSPresence()&JustDTS == JustDTS {
 		DTSSize := 5
@@ -276,7 +276,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// done
 		index += DTSSize
-		fmt.Println("DTS extracted !")
+		// fmt.Println("DTS extracted !")
 	}
 	// ESCR
 	if pesh.Extension.ESCRPresent() {
@@ -287,7 +287,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// done
 		index += ESCRSize
-		fmt.Println("ESCR extracted !")
+		// fmt.Println("ESCR extracted !")
 	}
 	// ES rate
 	if pesh.Extension.ESRatePresent() {
@@ -298,7 +298,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// done
 		index += ESRateSize
-		fmt.Println("ESRate extracted !")
+		// fmt.Println("ESRate extracted !")
 	}
 	// additional copy info
 	if pesh.Extension.AdditionalCopyInfoPresent() {
@@ -312,7 +312,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		pesh.Extension.Data.AdditionalCopyInfo = &value
 		// done
 		index++
-		fmt.Println("Additional Copy Info parsed !")
+		// fmt.Println("Additional Copy Info parsed !")
 	}
 	// PES CRC
 	if pesh.Extension.CRCPresent() {
@@ -323,7 +323,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// done
 		index += CRCSize
-		fmt.Println("ESRate extracted !")
+		// fmt.Println("ESRate extracted !")
 	}
 	// PES extension flag
 	if pesh.Extension.SecondExtensionPresent() {
@@ -337,13 +337,13 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 				pesh.Extension.Data.PrivateData[i] = data[index+i]
 			}
 			index += privateDataSize
-			fmt.Println("Private Data extracted !")
+			// fmt.Println("Private Data extracted !")
 		}
 		// pack header field flag
 		if headers&0b01000000 == 0b01000000 {
 			value := data[index]
 			pesh.Extension.Data.PackHeaderField = &value
-			fmt.Println("PackHeader field flag set in the PES extension data: unsure of subsequent read") // mmm
+			// fmt.Println("PackHeader field flag set in the PES extension data: unsure of subsequent read") // mmm
 			index++
 		}
 		// program packet sequence counter flag
@@ -354,7 +354,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 				pesh.Extension.Data.ProgramPacketSequenceCounter[i] = data[index+i]
 			}
 			index += programPacketSequenceCounterSize
-			fmt.Println("program packet sequence counter extracted !")
+			// fmt.Println("program packet sequence counter extracted !")
 		}
 		// P-STD buffer flag
 		if headers&0b00010000 == 0b00010000 {
@@ -364,7 +364,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 				pesh.Extension.Data.PSTD[i] = data[index+i]
 			}
 			index += PSTDSize
-			fmt.Println("P-STD buffer extracted !")
+			// fmt.Println("P-STD buffer extracted !")
 		}
 		// Fixed bytes
 		if headers&0b00001110 != 0b00001110 {
@@ -388,7 +388,7 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 				pesh.Extension.Data.PSTD[i] = data[index+i]
 			}
 			index += additionnalDataLen
-			fmt.Println("PES Extension 2 data extracted !")
+			// fmt.Println("PES Extension 2 data extracted !")
 		}
 	}
 	// Check final padding
