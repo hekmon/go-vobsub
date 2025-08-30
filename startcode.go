@@ -6,11 +6,15 @@ import (
 )
 
 const (
-	StartCodeHeaderLen = 4
-	StartCodeMarker    = 0x000001
+	StartCodeMarker = 0x000001
+
+	StreamIDPackerHeader  = 0xBA
+	PrivateStream1ID      = 0xBD
+	StreamIDPaddingStream = 0xBE
+	PrivateStream2ID      = 0xBF
 )
 
-type StartCodeHeader [StartCodeHeaderLen]byte
+type StartCodeHeader [4]byte
 
 func (sch StartCodeHeader) Validate() error {
 	if binary.BigEndian.Uint32(sch[:])>>8 != StartCodeMarker {
@@ -58,7 +62,7 @@ func (sid StreamID) String() string {
 		return "Group of Pictures"
 	case sid == 0xB9:
 		return "Program end"
-	case sid == 0xBA: // https://dvd.sourceforge.net/dvdinfo/packhdr.html
+	case sid == StreamIDPackerHeader: // https://dvd.sourceforge.net/dvdinfo/packhdr.html
 		return "Pack header"
 	case sid == 0xBB:
 		return "System Header"
@@ -66,7 +70,7 @@ func (sid StreamID) String() string {
 		return "Program Stream Map"
 	case sid == PrivateStream1ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 1"
-	case sid == 0xBE: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+	case sid == StreamIDPaddingStream: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Padding stream"
 	case sid == PrivateStream2ID: // https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 		return "Private stream 2"

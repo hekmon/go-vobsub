@@ -7,17 +7,9 @@ import (
 
 // https://dvd.sourceforge.net/dvdinfo/packhdr.html
 
-const (
-	// PackHeaderLen      = StartCodeHeaderLen + PackHeaderExtraLen
-	PackHeaderExtraLen = 10
-
-	PrivateStream1ID = 0xBD
-	PrivateStream2ID = 0xBF
-)
-
 type PackHeader struct {
 	StartCodeHeader StartCodeHeader
-	Remaining       [PackHeaderExtraLen]byte
+	Remaining       [10]byte
 }
 
 func (ph PackHeader) Len() int {
@@ -27,6 +19,10 @@ func (ph PackHeader) Len() int {
 func (ph PackHeader) Validate() error {
 	if err := ph.StartCodeHeader.Validate(); err != nil {
 		return err
+	}
+	// Validate the PACK identifier
+	if ph.StartCodeHeader[3] != StreamIDPackerHeader {
+		return fmt.Errorf("invalid PACK identifier: %08b (expected %08b)", ph.StartCodeHeader[3], StreamIDPackerHeader)
 	}
 	// Check for fixed bits in the SCR 6 first bytes
 	if ph.Remaining[0]>>6 != 0b01 {

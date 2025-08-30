@@ -14,6 +14,11 @@ const (
 	PESPrivateStreamSubStreamIDLen = 1
 )
 
+type PESPacket struct {
+	Header  PESHeader
+	Payload []byte
+}
+
 type PESHeader struct {
 	StartCodeHeader StartCodeHeader
 	PacketLength    [PESPacketLen]byte
@@ -36,7 +41,7 @@ func (pesh PESHeader) Validate() (err error) {
 	return nil
 }
 
-func (pesh PESHeader) GetPacketLength() int{
+func (pesh PESHeader) GetPacketLength() int {
 	return int(binary.BigEndian.Uint16(pesh.PacketLength[:]))
 }
 

@@ -36,9 +36,13 @@ func ReadVobSub(subFile string) (err error) {
 	// 	return
 	// }
 
-	var nextAt int64
+	var (
+		nextAt int64
+		// packet PESPacket
+	)
 	for {
-		if nextAt, err = parseStream(fd, nextAt); err != nil {
+		if _, nextAt, err = parsePacket(fd, nextAt); err != nil {
+			err = fmt.Errorf("failed to parse packet: %w", err)
 			return
 		}
 		fmt.Println("next packet at cursor", nextAt)
@@ -46,99 +50,119 @@ func ReadVobSub(subFile string) (err error) {
 	}
 }
 
-func parseStream(fd *os.File, startAt int64) (nextAt int64, err error) {
+func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt int64, err error) {
 	// Read Start code and verify it is a pack header
-	cursor := startAt
 	var (
 		sch    StartCodeHeader
 		nbRead int
 	)
-	if nbRead, err = fd.ReadAt(sch[:], cursor); err != nil {
+	if nbRead, err = fd.ReadAt(sch[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	if err = sch.Validate(); err != nil {
 		err = fmt.Errorf("invalid MPEG header: %w", err)
 		return
 	}
-	if sch.StreamID() != 0xBA {
+	// Act depending on stream ID
+	switch sch.StreamID() {
+	case StreamIDPackerHeader:
+		if packet, nextAt, err = parsePackHeader(fd, currentPosition, sch); err != nil {
+			err = fmt.Errorf("failed to parse Pack Header: %w", err)
+			return
+		}
+		return
+	// case StreamIDPaddingStream:
+	// 	// TODO
+	// 	return
+	default:
 		err = fmt.Errorf("unexpected stream ID: %s", sch.StreamID())
 		return
 	}
-	// We do have a pack header, read it fully
+}
+
+func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (packet PESPacket, nextPacketPosition int64, err error) {
+	var nbRead int
+	// Finish reading pack header
 	ph := PackHeader{
 		StartCodeHeader: sch,
 	}
-	if nbRead, err = fd.ReadAt(ph.Remaining[:], cursor); err != nil {
+	if nbRead, err = fd.ReadAt(ph.Remaining[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read pack header: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	if err = ph.Validate(); err != nil {
 		err = fmt.Errorf("invalid pack header: %w", err)
 		return
 	}
-	cursor += ph.StuffingBytesLength()
+	currentPosition += ph.StuffingBytesLength()
 	fmt.Println(ph.String())
 	fmt.Println(ph.GoString())
 	// Next read the PES header
 	var pes PESHeader
-	if nbRead, err = fd.ReadAt(pes.StartCodeHeader[:], cursor); err != nil {
+	if nbRead, err = fd.ReadAt(pes.StartCodeHeader[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	if err = pes.StartCodeHeader.Validate(); err != nil {
 		err = fmt.Errorf("invalid PES header: invalid start code: %w", err)
 		return
 	}
-	if pes.StartCodeHeader.StreamID() != PrivateStream1ID {
-		// We expect a Private stream 1 StreamID (for subtitles)
-		err = fmt.Errorf("unexpected PES stream ID: 0x%02X (expecting 0x%02x)",
-			byte(pes.StartCodeHeader.StreamID()), PrivateStream1ID)
-		return
-	}
-	//// Read PES packet length
-	if nbRead, err = fd.ReadAt(pes.PacketLength[:], cursor); err != nil {
+	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
-	nextAt = cursor + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
+	currentPosition += int64(nbRead)
+	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
+	// Continue depending on stream ID
+	switch pes.StartCodeHeader.StreamID() {
+	case PrivateStream1ID:
+		if packet, err = parsePESSubtitlePacket(fd, currentPosition, pes); err != nil {
+			err = fmt.Errorf("failed to parse subtitle stream (private stream 1) packet: %w", err)
+			return
+		}
+		return
+	default:
+		err = fmt.Errorf("unexpected PES Stream ID: %s", pes.StartCodeHeader.StreamID())
+		return
+	}
+}
+
+func parsePESSubtitlePacket(fd *os.File, currentPosition int64, preHeader PESHeader) (packet PESPacket, err error) {
+	var nbRead int
+	packet.Header = preHeader
+	// Finish reading PES header
 	//// 0xBD stream type has PES header extension, read it
-	pes.Extension = new(PESExtension)
-	if nbRead, err = fd.ReadAt(pes.Extension[:], cursor); err != nil {
+	packet.Header.Extension = new(PESExtension)
+	if nbRead, err = fd.ReadAt(packet.Header.Extension[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES extension header: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	//// Read PES Extension Data
-	pes.ExtensionData = make([]byte, pes.Extension.RemainingHeaderLength())
-	if nbRead, err = fd.ReadAt(pes.ExtensionData, cursor); err != nil {
+	packet.Header.ExtensionData = make([]byte, packet.Header.Extension.RemainingHeaderLength())
+	if nbRead, err = fd.ReadAt(packet.Header.ExtensionData, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES extension data: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	//// Read sub stream id for private streams (we are one, checked earlier we are PESStreamIDPrivateStream1)
-	if nbRead, err = fd.ReadAt(pes.SubStreamID[:], cursor); err != nil {
+	if nbRead, err = fd.ReadAt(packet.Header.SubStreamID[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read sub stream id: %w", err)
 		return
 	}
-	cursor += int64(nbRead)
+	currentPosition += int64(nbRead)
 	//// Headers done
-	fmt.Println(pes.String())
-	fmt.Println(pes.GoString())
+	fmt.Println(packet.Header.String())
+	fmt.Println(packet.Header.GoString())
 	// Payload
-	buffer := make([]byte, pes.GetPacketLength()-len(*pes.Extension)-len(pes.ExtensionData)-len(pes.SubStreamID))
-	if nbRead, err = fd.ReadAt(buffer, cursor); err != nil {
+	packet.Payload = make([]byte, packet.Header.GetPacketLength()-len(*packet.Header.Extension)-len(packet.Header.ExtensionData)-len(packet.Header.SubStreamID))
+	if _, err = fd.ReadAt(packet.Payload, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read the payload: %w", err)
 		return
-	}
-	fmt.Println("Payload has", len(buffer), "bytes")
-	cursor += int64(nbRead)
-	if cursor != nextAt {
-		err = fmt.Errorf("cursor is misaligned after reading the packet")
 	}
 	return
 }
