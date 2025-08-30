@@ -150,18 +150,22 @@ func parsePESSubtitlePacket(fd *os.File, currentPosition int64, preHeader PESHea
 	// Finish reading PES header
 	//// 0xBD stream type has PES header extension, read it
 	packet.Header.Extension = new(PESExtension)
-	if nbRead, err = fd.ReadAt(packet.Header.Extension[:], currentPosition); err != nil {
+	if nbRead, err = fd.ReadAt(packet.Header.Extension.Header[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES extension header: %w", err)
 		return
 	}
 	currentPosition += int64(nbRead)
 	//// Read PES Extension Data
-	packet.Header.ExtensionData = make([]byte, packet.Header.Extension.RemainingHeaderLength())
-	if nbRead, err = fd.ReadAt(packet.Header.ExtensionData, currentPosition); err != nil {
+	extensionData := make([]byte, packet.Header.Extension.RemainingHeaderLength())
+	if nbRead, err = fd.ReadAt(extensionData, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES extension data: %w", err)
 		return
 	}
 	currentPosition += int64(nbRead)
+	if err = packet.Header.ParseExtensionData(extensionData); err != nil {
+		err = fmt.Errorf("failed to parse extension header data: %w", err)
+		return
+	}
 	//// Read sub stream id for private streams (we are one, checked earlier we are PESStreamIDPrivateStream1)
 	if nbRead, err = fd.ReadAt(packet.Header.SubStreamID[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read sub stream id: %w", err)
@@ -172,7 +176,7 @@ func parsePESSubtitlePacket(fd *os.File, currentPosition int64, preHeader PESHea
 	fmt.Println(packet.Header.String())
 	// fmt.Println(packet.Header.GoString())
 	// Payload
-	packet.Payload = make([]byte, packet.Header.GetPacketLength()-len(*packet.Header.Extension)-len(packet.Header.ExtensionData)-len(packet.Header.SubStreamID))
+	packet.Payload = make([]byte, packet.Header.GetPacketLength()-len(packet.Header.Extension.Header)-len(extensionData)-len(packet.Header.SubStreamID))
 	if _, err = fd.ReadAt(packet.Payload, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read the payload: %w", err)
 		return
