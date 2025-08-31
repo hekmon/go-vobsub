@@ -19,15 +19,15 @@ type PESPacket struct {
 }
 
 type PESHeader struct {
-	StartCodeHeader StartCodeHeader
-	PacketLength    [2]byte
-	Extension       *PESExtension
+	MPH          MPEGHeader
+	PacketLength [2]byte
+	Extension    *PESExtension
 	// Only for private streams (StreamID == 0xBD or 0xBF)
 	SubStreamID SubStreamID
 }
 
 func (pesh PESHeader) Validate() (err error) {
-	if err = pesh.StartCodeHeader.Validate(); err != nil {
+	if err = pesh.MPH.Validate(); err != nil {
 		return fmt.Errorf("invalid PES header: invalid start code: %w", err)
 	}
 	if pesh.Extension != nil {
@@ -45,14 +45,14 @@ func (pesh PESHeader) GetPacketLength() int {
 func (pesh PESHeader) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %s, PacketLength: %d, Extension: ",
-		pesh.StartCodeHeader, pesh.GetPacketLength()))
+		pesh.MPH, pesh.GetPacketLength()))
 	if pesh.Extension != nil {
 		builder.WriteString(pesh.Extension.String())
 	} else {
 		builder.WriteString("<nil>")
 	}
-	if pesh.StartCodeHeader.StreamID() == StreamIDPrivateStream1 ||
-		pesh.StartCodeHeader.StreamID() == StreamIDPrivateStream2 {
+	if pesh.MPH.StreamID() == StreamIDPrivateStream1 ||
+		pesh.MPH.StreamID() == StreamIDPrivateStream2 {
 		// Private stream, print sub stream id too
 		builder.WriteString(fmt.Sprintf(", SubStreamID: 0x%02x", pesh.SubStreamID[0]))
 	}
@@ -63,14 +63,14 @@ func (pesh PESHeader) String() string {
 func (pesh PESHeader) GoString() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %#v, PacketLength: %08b%08b, Extension: ",
-		pesh.StartCodeHeader, byte(pesh.PacketLength[0]), byte(pesh.PacketLength[1])))
+		pesh.MPH, byte(pesh.PacketLength[0]), byte(pesh.PacketLength[1])))
 	if pesh.Extension != nil {
 		builder.WriteString(pesh.Extension.GoString())
 	} else {
 		builder.WriteString("<nil>")
 	}
-	if pesh.StartCodeHeader.StreamID() == StreamIDPrivateStream1 ||
-		pesh.StartCodeHeader.StreamID() == StreamIDPrivateStream2 {
+	if pesh.MPH.StreamID() == StreamIDPrivateStream1 ||
+		pesh.MPH.StreamID() == StreamIDPrivateStream2 {
 		// Private stream, print sub stream id too
 		builder.WriteString(fmt.Sprintf(", SubStreamID: %08b", pesh.SubStreamID[0]))
 	}

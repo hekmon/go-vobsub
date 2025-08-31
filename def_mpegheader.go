@@ -6,39 +6,58 @@ import (
 )
 
 const (
+	// StartCodeMarker is the 3 bytes values that mark the beginning of a MPEG header, Pack header and PES header.
 	StartCodeMarker = 0x000001
 
-	StreamIDPackHeader     = 0xBA
+	// StreamIDPackHeader is the ID of a Pack header
+	StreamIDPackHeader = 0xBA
+	// StreamIDPrivateStream1 is the ID of a Private Stream 1
 	StreamIDPrivateStream1 = 0xBD
-	StreamIDPaddingStream  = 0xBE
+	// StreamIDPaddingStream is the ID of a Padding Stream
+	StreamIDPaddingStream = 0xBE
+	// StreamIDPrivateStream2 is the ID of a Private Stream 2
 	StreamIDPrivateStream2 = 0xBF
-	StreamIDProgramEnd     = 0xB9
+	// StreamIDProgramEnd is the ID marking the end of a stream
+	StreamIDProgramEnd = 0xB9
 )
 
-type StartCodeHeader [4]byte
+// MPEGHeader represents the top level header encountered in a packetized MPEG stream.
+// See https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html for more informations.
+type MPEGHeader [4]byte
 
-func (sch StartCodeHeader) Validate() error {
-	if binary.BigEndian.Uint32(sch[:])>>8 != StartCodeMarker {
-		return fmt.Errorf("invalid start code marker: %x (expected %x)", sch, StartCodeMarker)
+// Validate verifies the content of the header
+func (mph MPEGHeader) Validate() error {
+	if binary.BigEndian.Uint32(mph[:])>>8 != StartCodeMarker {
+		return fmt.Errorf("invalid start code marker: %x (expected %x)", mph, StartCodeMarker)
 	}
 	return nil
 }
 
-func (sch StartCodeHeader) String() string {
-	return fmt.Sprintf("StartCodeHeader{Marker: %06x, StreamID: %s}", binary.BigEndian.Uint32(sch[:])>>8, sch.StreamID())
+// StreamID returns the Stream ID contained within the header
+func (mph MPEGHeader) StreamID() StreamID {
+	return StreamID(mph[3])
 }
 
-func (sch StartCodeHeader) GoString() string {
-	return fmt.Sprintf("StartCodeHeader{Marker:%06b StreamID: 0x%02X}", binary.BigEndian.Uint32(sch[:])>>8, byte(sch.StreamID()))
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
+func (mph MPEGHeader) String() string {
+	return fmt.Sprintf("StartCodeHeader{Marker: %06x, StreamID: %s}", binary.BigEndian.Uint32(mph[:])>>8, mph.StreamID())
 }
 
-func (sch StartCodeHeader) StreamID() StreamID {
-	return StreamID(sch[3])
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
+func (mph MPEGHeader) GoString() string {
+	return fmt.Sprintf("StartCodeHeader{Marker:%06b StreamID: 0x%02X}", binary.BigEndian.Uint32(mph[:])>>8, byte(mph.StreamID()))
 }
 
-// https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html
+// StreamID represents a Stream ID
 type StreamID byte
 
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
 func (sid StreamID) String() string {
 	switch {
 	case sid == 0x00: // https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html#picture
@@ -108,6 +127,9 @@ func (sid StreamID) String() string {
 	}
 }
 
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
 func (sid StreamID) GoString() string {
 	return fmt.Sprintf("%s (%02X)", sid, sid)
 }

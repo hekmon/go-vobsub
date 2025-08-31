@@ -47,7 +47,7 @@ func readSubFile(subFile string) (privateStream1Packets []PESPacket, err error) 
 			err = fmt.Errorf("failed to parse packet: %w", err)
 			return
 		}
-		if packet.Header.StartCodeHeader.StreamID() == StreamIDPrivateStream1 {
+		if packet.Header.MPH.StreamID() == StreamIDPrivateStream1 {
 			privateStream1Packets = append(privateStream1Packets, packet)
 		}
 	}

@@ -12,21 +12,21 @@ const (
 	PTSDTSClockFrequency = 90_000 // 90 kHz
 )
 
-// PackHeader contains the data of the MPEG pack header.
+// PackHeader contains the data of the MPEG pack header. It itselfs contains a new MPEG header.
 // More informations at https://dvd.sourceforge.net/dvdinfo/packhdr.html
 type PackHeader struct {
-	StartCodeHeader StartCodeHeader
-	Remaining       [10]byte
+	MPH       MPEGHeader
+	Remaining [10]byte
 }
 
 // Validate check if the data within the PackHeader are valid
 func (ph PackHeader) Validate() error {
-	if err := ph.StartCodeHeader.Validate(); err != nil {
+	if err := ph.MPH.Validate(); err != nil {
 		return err
 	}
 	// Validate the PACK identifier
-	if ph.StartCodeHeader[3] != StreamIDPackHeader {
-		return fmt.Errorf("invalid PACK identifier: %08b (expected %08b)", ph.StartCodeHeader[3], StreamIDPackHeader)
+	if ph.MPH[3] != StreamIDPackHeader {
+		return fmt.Errorf("invalid PACK identifier: %08b (expected %08b)", ph.MPH[3], StreamIDPackHeader)
 	}
 	// Check for fixed bits in the SCR 6 first bytes
 	if ph.Remaining[0]>>6 != 0b01 {
@@ -92,7 +92,7 @@ func (ph PackHeader) StuffingBytesLength() int64 {
 // See https://pkg.go.dev/fmt#Stringer
 func (ph PackHeader) String() string {
 	return fmt.Sprintf("PackHeader{%s, SCR: %s, ProgramMuxRate: %d, StuffingBytesLength: %d}",
-		ph.StartCodeHeader, ph.SCR(), ph.ProgramMuxRate(), ph.StuffingBytesLength(),
+		ph.MPH, ph.SCR(), ph.ProgramMuxRate(), ph.StuffingBytesLength(),
 	)
 }
 
@@ -101,7 +101,7 @@ func (ph PackHeader) String() string {
 // See https://pkg.go.dev/fmt#GoStringer
 func (ph PackHeader) GoString() string {
 	return fmt.Sprintf("PackHeader{%s  PackHeader{%08b %08b %08b %08b %08b %08b  %08b %08b %08b  %08b}}",
-		ph.StartCodeHeader.GoString(),
+		ph.MPH.GoString(),
 		ph.Remaining[0], ph.Remaining[1], ph.Remaining[2], ph.Remaining[3], ph.Remaining[4], ph.Remaining[5],
 		ph.Remaining[6], ph.Remaining[7], ph.Remaining[8], ph.Remaining[9],
 	)

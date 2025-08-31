@@ -14,10 +14,10 @@ const (
 func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt int64, err error) {
 	// Read Start code and verify it is a pack header
 	var (
-		sch    StartCodeHeader
+		mph    MPEGHeader
 		nbRead int
 	)
-	if nbRead, err = fd.ReadAt(sch[:], currentPosition); err != nil {
+	if nbRead, err = fd.ReadAt(mph[:], currentPosition); err != nil {
 		if errors.Is(err, io.EOF) {
 			// strange but seen in the wild
 			err = nil
@@ -28,20 +28,20 @@ func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt i
 		return
 	}
 	currentPosition += int64(nbRead)
-	if err = sch.Validate(); err != nil {
+	if err = mph.Validate(); err != nil {
 		err = fmt.Errorf("invalid MPEG header: %w", err)
 		return
 	}
 	// Act depending on stream ID
-	switch sch.StreamID() {
+	switch mph.StreamID() {
 	case StreamIDPackHeader:
-		if packet, nextAt, err = parsePackHeader(fd, currentPosition, sch); err != nil {
+		if packet, nextAt, err = parsePackHeader(fd, currentPosition, mph); err != nil {
 			err = fmt.Errorf("failed to parse Pack Header: %w", err)
 			return
 		}
 		return
 	case StreamIDPaddingStream:
-		if nextAt, err = parsePaddingStream(fd, currentPosition, sch); err != nil {
+		if nextAt, err = parsePaddingStream(fd, currentPosition, mph); err != nil {
 			err = fmt.Errorf("failed to parse padding stream: %w", err)
 			return
 		}
@@ -50,16 +50,16 @@ func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt i
 		nextAt = stopFlagValue
 		return
 	default:
-		err = fmt.Errorf("unexpected stream ID: %s", sch.StreamID())
+		err = fmt.Errorf("unexpected stream ID: %s", mph.StreamID())
 		return
 	}
 }
 
-func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (packet PESPacket, nextPacketPosition int64, err error) {
+func parsePackHeader(fd *os.File, currentPosition int64, mph MPEGHeader) (packet PESPacket, nextPacketPosition int64, err error) {
 	var nbRead int
 	// Finish reading pack header
 	ph := PackHeader{
-		StartCodeHeader: sch,
+		MPH: mph,
 	}
 	if nbRead, err = fd.ReadAt(ph.Remaining[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read pack header: %w", err)
@@ -75,12 +75,12 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	// fmt.Println(ph.GoString())
 	// Next read the PES header
 	var pes PESHeader
-	if nbRead, err = fd.ReadAt(pes.StartCodeHeader[:], currentPosition); err != nil {
+	if nbRead, err = fd.ReadAt(pes.MPH[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES header: %w", err)
 		return
 	}
 	currentPosition += int64(nbRead)
-	if err = pes.StartCodeHeader.Validate(); err != nil {
+	if err = pes.MPH.Validate(); err != nil {
 		err = fmt.Errorf("invalid PES header: invalid start code: %w", err)
 		return
 	}
@@ -91,7 +91,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 	currentPosition += int64(nbRead)
 	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
 	// Continue depending on stream ID
-	switch pes.StartCodeHeader.StreamID() {
+	switch pes.MPH.StreamID() {
 	case StreamIDPrivateStream1:
 		if packet, err = parsePESPrivateStream1Packet(fd, currentPosition, pes); err != nil {
 			err = fmt.Errorf("failed to parse subtitle stream (private stream 1) packet: %w", err)
@@ -99,7 +99,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, sch StartCodeHeader) (p
 		}
 		return
 	default:
-		err = fmt.Errorf("unexpected PES Stream ID: %s", pes.StartCodeHeader.StreamID())
+		err = fmt.Errorf("unexpected PES Stream ID: %s", pes.MPH.StreamID())
 		return
 	}
 }
@@ -145,11 +145,11 @@ func parsePESPrivateStream1Packet(fd *os.File, currentPosition int64, preHeader 
 	return
 }
 
-func parsePaddingStream(fd *os.File, currentPosition int64, sch StartCodeHeader) (nextPacketPosition int64, err error) {
+func parsePaddingStream(fd *os.File, currentPosition int64, mph MPEGHeader) (nextPacketPosition int64, err error) {
 	var nbRead int
 	// Read the PES header used in padding
 	pes := PESHeader{
-		StartCodeHeader: sch,
+		MPH: mph,
 	}
 	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
