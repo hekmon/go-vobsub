@@ -5,17 +5,21 @@ import (
 	"time"
 )
 
-// https://dvd.sourceforge.net/dvdinfo/packhdr.html
+const (
+	// SCRFrequency is the System Clock Reference base frequency
+	SCRFrequency = 27_000_000 // 27 MHz
+	// PTSDTSClockFrequency is the Presentation TimeStamp and Decoding TimeStamp clock base frequency
+	PTSDTSClockFrequency = 90_000 // 90 kHz
+)
 
+// PackHeader contains the data of the MPEG pack header.
+// More informations at https://dvd.sourceforge.net/dvdinfo/packhdr.html
 type PackHeader struct {
 	StartCodeHeader StartCodeHeader
 	Remaining       [10]byte
 }
 
-func (ph PackHeader) Len() int {
-	return len(ph.StartCodeHeader) + len(ph.Remaining)
-}
-
+// Validate check if the data within the PackHeader are valid
 func (ph PackHeader) Validate() error {
 	if err := ph.StartCodeHeader.Validate(); err != nil {
 		return err
@@ -51,7 +55,8 @@ func (ph PackHeader) Validate() error {
 	return nil
 }
 
-func (ph PackHeader) SystemClockReferenceRaw() (quotient uint64, remainder uint64) {
+// SCRRaw yields the raw values of System Clock Reference contains in the pack header
+func (ph PackHeader) SCRRaw() (quotient uint64, remainder uint64) {
 	// Extract the quotient
 	quotient = uint64(ph.Remaining[0]&0b00111000)<<(30-3) | uint64(ph.Remaining[0]&0b00000011)<<28
 	quotient |= uint64(ph.Remaining[1]) << 20
@@ -64,43 +69,40 @@ func (ph PackHeader) SystemClockReferenceRaw() (quotient uint64, remainder uint6
 	return
 }
 
-func (ph PackHeader) SystemClockReference() time.Duration {
-	return ComputeSCRTiming(ph.SystemClockReferenceRaw())
+// SCR returns the the parsed and computed System Clock Reference contained in the pack header
+func (ph PackHeader) SCR() time.Duration {
+	quotient, remainder := ph.SCRRaw()
+	ticks := quotient*(SCRFrequency/PTSDTSClockFrequency) + uint64(remainder)
+	return time.Duration(ticks * uint64(time.Second) / SCRFrequency)
 }
 
+// ProgramMuxRate is a (originaly 22 bits) integer specifying the rate at which the program stream target decoder receives the Program Stream during the pack in which it is included.
+// The value of ProgramMuxRate is measured in units of 50 bytes/second. The value 0 is forbidden.
 func (ph PackHeader) ProgramMuxRate() uint64 {
 	return uint64(ph.Remaining[6])<<(16-2) | uint64(ph.Remaining[7])<<(8-2) | uint64(ph.Remaining[8])>>2
 }
 
+// StuffingBytesLength returns the number of padding bytes (0xff) that follows the Pack Header in the stream
 func (ph PackHeader) StuffingBytesLength() int64 {
 	return int64(ph.Remaining[9] & 0b00000111)
 }
 
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
 func (ph PackHeader) String() string {
 	return fmt.Sprintf("PackHeader{%s, SCR: %s, ProgramMuxRate: %d, StuffingBytesLength: %d}",
-		ph.StartCodeHeader, ph.SystemClockReference(), ph.ProgramMuxRate(), ph.StuffingBytesLength(),
+		ph.StartCodeHeader, ph.SCR(), ph.ProgramMuxRate(), ph.StuffingBytesLength(),
 	)
 }
 
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
 func (ph PackHeader) GoString() string {
 	return fmt.Sprintf("PackHeader{%s  PackHeader{%08b %08b %08b %08b %08b %08b  %08b %08b %08b  %08b}}",
 		ph.StartCodeHeader.GoString(),
 		ph.Remaining[0], ph.Remaining[1], ph.Remaining[2], ph.Remaining[3], ph.Remaining[4], ph.Remaining[5],
 		ph.Remaining[6], ph.Remaining[7], ph.Remaining[8], ph.Remaining[9],
 	)
-}
-
-const (
-	MaxSCRValue          = (1 << 33) - 1 // 33-bit maximum
-	MaxSCRExtValue       = (1 << 9) - 1  // 9-bit maximum
-	SCRClockFrequency    = 27_000_000    // 27 MHz clock frequency used for SCR
-	PTSDTSClockFrequency = 90_000        // 90 kHz clock frequency for PTS and DTS
-)
-
-func ComputeSCRTiming(quotient uint64, remainder uint64) time.Duration {
-	if quotient > MaxSCRValue || remainder > MaxSCRExtValue {
-		return 0
-	}
-	totalTicks := quotient*(SCRClockFrequency/PTSDTSClockFrequency) + uint64(remainder)
-	return time.Duration(totalTicks * uint64(time.Second) / SCRClockFrequency)
 }

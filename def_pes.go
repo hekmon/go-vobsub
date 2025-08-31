@@ -9,9 +9,8 @@ import (
 )
 
 const (
-	PESPacketLen       = 2
-	PESExtensionLen    = 3
-	PESExtensionMarker = 0x2
+	PESExtensionMarker   = 0x2
+	SubStreamIDBaseValue = 0x20
 )
 
 type PESPacket struct {
@@ -21,16 +20,10 @@ type PESPacket struct {
 
 type PESHeader struct {
 	StartCodeHeader StartCodeHeader
-	PacketLength    [PESPacketLen]byte
+	PacketLength    [2]byte
 	Extension       *PESExtension
 	// Only for private streams (StreamID == 0xBD or 0xBF)
 	SubStreamID SubStreamID
-}
-
-type SubStreamID [1]byte
-
-func (ssid SubStreamID) SubtitleID() int {
-	return int(ssid[0]) - 0x20
 }
 
 func (pesh PESHeader) Validate() (err error) {
@@ -85,9 +78,14 @@ func (pesh PESHeader) GoString() string {
 	return builder.String()
 }
 
-// https://en.wikipedia.org/wiki/Packetized_elementary_stream#Optional_PES_header
+type SubStreamID [1]byte
+
+func (ssid SubStreamID) SubtitleID() int {
+	return int(ssid[0]) - SubStreamIDBaseValue
+}
+
 type PESExtension struct {
-	Header [PESExtensionLen]byte
+	Header [3]byte
 	Data   PESExtensionData
 }
 

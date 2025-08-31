@@ -126,7 +126,7 @@ func parsePESPrivateStream1Packet(fd *os.File, currentPosition int64, preHeader 
 		err = fmt.Errorf("failed to parse extension header data: %w", err)
 		return
 	}
-	//// Read sub stream id for private streams (we are one, checked earlier we are PESStreamIDPrivateStream1)
+	//// Read sub stream id for private streams
 	if nbRead, err = fd.ReadAt(packet.Header.SubStreamID[:], currentPosition); err != nil {
 		err = fmt.Errorf("failed to read sub stream id: %w", err)
 		return
@@ -136,7 +136,8 @@ func parsePESPrivateStream1Packet(fd *os.File, currentPosition int64, preHeader 
 	// fmt.Println(packet.Header.String())
 	// fmt.Println(packet.Header.GoString())
 	// Payload
-	packet.Payload = make([]byte, packet.Header.GetPacketLength()-len(packet.Header.Extension.Header)-len(extensionData)-len(packet.Header.SubStreamID))
+	payloadLen := packet.Header.GetPacketLength() - len(packet.Header.Extension.Header) - len(extensionData) - len(packet.Header.SubStreamID)
+	packet.Payload = make([]byte, payloadLen)
 	if _, err = fd.ReadAt(packet.Payload, currentPosition); err != nil {
 		err = fmt.Errorf("failed to read the payload: %w", err)
 		return
