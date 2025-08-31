@@ -38,6 +38,7 @@ func readSubFile(subFile string) (privateStream1Packets []PESPacket, err error) 
 		return
 	}
 	defer fd.Close()
+	// Parse its packets
 	var (
 		nextAt int64
 		packet PESPacket

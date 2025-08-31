@@ -8,25 +8,23 @@ import (
 	"time"
 )
 
-const (
-	PESExtensionMarker   = 0x2
-	SubStreamIDBaseValue = 0x20
-)
-
+// PESPacket represents a Packetized Elementary Stream headers and its payload.
 type PESPacket struct {
 	Header  PESHeader
 	Payload []byte
 }
 
+// PESHeader represents the headers and associated data of aPacketized Elementary Stream header.
+// More infos on https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 type PESHeader struct {
 	MPH          MPEGHeader
 	PacketLength [2]byte
 	Extension    *PESExtension
-	// Only for private streams (StreamID == 0xBD or 0xBF)
-	SubStreamID SubStreamID
+	SubStreamID  SubStreamID // Only for private streams (StreamID == 0xBD or 0xBF)
 }
 
-func (pesh PESHeader) Validate() (err error) {
+// Validate check the values of the PESHeader
+func (pesh *PESHeader) Validate() (err error) {
 	if err = pesh.MPH.Validate(); err != nil {
 		return fmt.Errorf("invalid PES header: invalid start code: %w", err)
 	}
@@ -38,11 +36,15 @@ func (pesh PESHeader) Validate() (err error) {
 	return nil
 }
 
-func (pesh PESHeader) GetPacketLength() int {
+// GetPacketLength returns the parsed packet length contained within the PES header
+func (pesh *PESHeader) GetPacketLength() int {
 	return int(binary.BigEndian.Uint16(pesh.PacketLength[:]))
 }
 
-func (pesh PESHeader) String() string {
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
+func (pesh *PESHeader) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %s, PacketLength: %d, Extension: ",
 		pesh.MPH, pesh.GetPacketLength()))
@@ -60,7 +62,10 @@ func (pesh PESHeader) String() string {
 	return builder.String()
 }
 
-func (pesh PESHeader) GoString() string {
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
+func (pesh *PESHeader) GoString() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("PESHeader{StartCodeHeader: %#v, PacketLength: %08b%08b, Extension: ",
 		pesh.MPH, byte(pesh.PacketLength[0]), byte(pesh.PacketLength[1])))
@@ -78,90 +83,120 @@ func (pesh PESHeader) GoString() string {
 	return builder.String()
 }
 
-type SubStreamID [1]byte
-
-func (ssid SubStreamID) SubtitleID() int {
-	return int(ssid[0]) - SubStreamIDBaseValue
+// ParseExtensionData allows to parse the Extension data after the extensions headers (they must be read already)
+func (pesh *PESHeader) ParseExtensionData(data []byte) (err error) {
+	// Parse the data
+	index, err := parsePESExtensionData(pesh.Extension, data)
+	if err != nil {
+		return fmt.Errorf("failed to parse extension data: %w", err)
+	}
+	// Check final padding
+	for i := index; i < len(data); i++ {
+		if data[i] != 0xFF {
+			return fmt.Errorf("invalid padding at the end of the extension data")
+		}
+		// fmt.Println("valid padding yay")
+	}
+	return
 }
 
+/*
+	PES Extension
+*/
+
+const (
+	// pesExtensionMarker is the first two fixed bits the start the PES extension headers
+	pesExtensionMarker = 0b10
+)
+
+// PESExtension represents the PES extension header and data
 type PESExtension struct {
 	Header [3]byte
 	Data   PESExtensionData
 }
 
 // Valid checks if the optional header marker is present at the start of the optional headers.
-func (poh PESExtension) Validate() error {
-	if poh.Header[0]>>6 != PESExtensionMarker {
-		return fmt.Errorf("invalid PES extension header marker: expected 0x%02X, got 0x%02X", PESExtensionMarker, poh.Header[0]>>6)
+func (poh *PESExtension) Validate() error {
+	if poh.Header[0]>>6 != pesExtensionMarker {
+		return fmt.Errorf("invalid PES extension header marker: expected 0x%02X, got 0x%02X", pesExtensionMarker, poh.Header[0]>>6)
 	}
 	// Extension is validated during parsing with ParseExtensionData()
 	return nil
 }
 
 // ScramblingControl returns the scrambling value. Check the related constants.
-func (poh PESExtension) ScramblingControl() ScramblingControl {
+func (poh *PESExtension) ScramblingControl() ScramblingControl {
 	return ScramblingControl((poh.Header[0] & 0b00110000) >> 4)
 }
 
 // Priority returns true if the priority bit is set to 1, indicating that the PES packet has higher priority than other packets in the same PID. false = Normal priority, true = High priority.
-func (poh PESExtension) HighPriority() bool {
+func (poh *PESExtension) HighPriority() bool {
 	return (poh.Header[0]&0b00001000)>>3 == 1
 }
 
 // DataAligned returns true if the data alignment indicator is set to 1, indicating that the payload starts with a byte-aligned elementary stream. false = Not aligned, true = Aligned.
-func (poh PESExtension) DataAligned() bool {
+func (poh *PESExtension) DataAligned() bool {
 	return (poh.Header[0]&0b00000100)>>2 == 1
 }
 
 // Copyright returns true if the copyright bit is set to 1, indicating that the PES packet contains copyrighted material. false = Not copyrighted, true = Copyrighted.
-func (poh PESExtension) Copyright() bool {
+func (poh *PESExtension) Copyright() bool {
 	return (poh.Header[0]&0b00000010)>>1 == 1
 }
 
 // Original returns true if the original bit is set to 1, indicating that the PES packet contains original material. false = Copy, true = Original.
-func (poh PESExtension) Original() bool {
+func (poh *PESExtension) Original() bool {
 	return poh.Header[0]&0b00000001 == 1
 }
 
-func (poh PESExtension) PTSDTSPresence() PTSDTSPresence {
+// PTSDTSPresence returns the Presentation Time Stamp and Decode Time Stamp presence
+func (poh *PESExtension) PTSDTSPresence() PTSDTSPresence {
 	return PTSDTSPresence(poh.Header[1] >> 6)
 }
 
-func (poh PESExtension) PTSPresent() bool {
-	return poh.PTSDTSPresence()&JustPTS != 0
+// PTSPresent returns if the Presentation Time Stamp is present
+func (poh *PESExtension) PTSPresent() bool {
+	return poh.PTSDTSPresence()&JustPTS == 1
 }
 
-func (poh PESExtension) DTSPresent() bool {
-	return poh.PTSDTSPresence()&JustDTS != 0
+// DTSPresent returns if the Decode Time Stamp is present
+func (poh *PESExtension) DTSPresent() bool {
+	return poh.PTSDTSPresence()&JustDTS == 1
 }
 
-// ESCR ElementaryStreamClockReference
-func (poh PESExtension) ESCRPresent() bool {
+// ESCRPresent returns if the Elementary Stream Clock Reference is present
+func (poh *PESExtension) ESCRPresent() bool {
 	return (poh.Header[1]&0b00100000)>>5 == 1
 }
 
-func (poh PESExtension) ESRatePresent() bool {
+// ESRatePresent returns if the ES Rate is present
+func (poh *PESExtension) ESRatePresent() bool {
 	return (poh.Header[1]&0b00010000)>>4 == 1
 }
 
-func (poh PESExtension) DSMTrickMode() bool {
+// DSMTrickMode returns if the DSM Trick Mode flag is set
+func (poh *PESExtension) DSMTrickMode() bool {
 	return (poh.Header[1]&0b00001000)>>3 == 1
 }
 
-func (poh PESExtension) AdditionalCopyInfoPresent() bool {
+// AdditionalCopyInfoPresent returns if Additional Copy Informations are present
+func (poh *PESExtension) AdditionalCopyInfoPresent() bool {
 	return (poh.Header[1]&0b00000100)>>2 == 1
 }
 
-func (poh PESExtension) CRCPresent() bool {
+// CRCPresent returns if the previous packet CRC is present
+func (poh *PESExtension) CRCPresent() bool {
 	return (poh.Header[1]&0b00000010)>>1 == 1
 }
 
-func (poh PESExtension) SecondExtensionPresent() bool {
+// SecondExtensionPresent returns if the second EPS extension is present
+func (poh *PESExtension) SecondExtensionPresent() bool {
 	return poh.Header[1]&0b00000001 == 1
 }
 
-func (poh PESExtension) RemainingHeaderLength() int64 {
-	return int64(poh.Header[2])
+// RemainingHeaderLength returns the remaining length of the PES extension headers after the flags has been parsed and before the payload starts
+func (poh *PESExtension) RemainingHeaderLength() int {
+	return int(poh.Header[2])
 }
 
 // String implements the fmt.Stringer interface.
@@ -185,9 +220,9 @@ func (poh PESExtension) GoString() string {
 	return fmt.Sprintf("%08b %08b %08b", poh.Header[0], poh.Header[1], poh.Header[2]) // TODO data
 }
 
+// ScramblingControl, more infos on // https://patents.google.com/patent/WO2010000692A1/en
 type ScramblingControl byte
 
-// https://patents.google.com/patent/WO2010000692A1/en
 const (
 	ScramblingControlNotScrambled ScramblingControl = 0b00
 	ScramblingControlReserved     ScramblingControl = 0b01 // Reserved as per standard, should not be used.
@@ -195,6 +230,9 @@ const (
 	ScramblingControlOddKey       ScramblingControl = 0b11
 )
 
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
 func (sc ScramblingControl) String() string {
 	switch sc {
 	case ScramblingControlNotScrambled:
@@ -210,10 +248,14 @@ func (sc ScramblingControl) String() string {
 	}
 }
 
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
 func (sc ScramblingControl) GoString() string {
 	return fmt.Sprintf("%s (%02b)", sc.String(), sc)
 }
 
+// PTSDTSPresence is the presence of PTS and DTS (or not)
 type PTSDTSPresence byte
 
 const (
@@ -223,6 +265,9 @@ const (
 	BothPTSandDTS     PTSDTSPresence = 0b11
 )
 
+// String implements the fmt.Stringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for printing.
+// See https://pkg.go.dev/fmt#Stringer
 func (ptd PTSDTSPresence) String() string {
 	switch ptd {
 	case NoPTSorDTSPresent:
@@ -238,68 +283,73 @@ func (ptd PTSDTSPresence) String() string {
 	}
 }
 
+// GoString implements the fmt.GoStringer interface.
+// It returns a string that represents the value of the receiver in a form suitable for debugging.
+// See https://pkg.go.dev/fmt#GoStringer
 func (ptd PTSDTSPresence) GoString() string {
 	return fmt.Sprintf("%s (%02b)", ptd.String(), ptd)
 }
 
-func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
-	// checks
-	if pesh.Extension == nil {
-		err = errors.New("no extension headers found")
+/*
+	PES Extension data
+*/
+
+// parseExtensionData is a low level parsing function, used by the PESHeader ParseExtensionData() high level method
+func parsePESExtensionData(extensionHeaders *PESExtension, data []byte) (index int, err error) {
+	if extensionHeaders == nil {
+		// no extension but high level might want to check padding after so not returning an error
 		return
 	}
-	if len(data) != int(pesh.Extension.RemainingHeaderLength()) {
+	if len(data) != extensionHeaders.RemainingHeaderLength() {
 		err = fmt.Errorf("received data len (%d) does not match expected len (%d)",
-			len(data), pesh.Extension.RemainingHeaderLength())
+			len(data), extensionHeaders.RemainingHeaderLength())
 		return
 	}
-	// Prepare
-	index := 0
 	// PTSDTS
-	if pesh.Extension.PTSDTSPresence()&JustPTS == JustPTS {
+	if extensionHeaders.PTSDTSPresence()&JustPTS == JustPTS {
 		PTSSize := 5
-		pesh.Extension.Data.PTS = make([]byte, PTSSize)
+		extensionHeaders.Data.PTS = make([]byte, PTSSize)
 		for i := range PTSSize {
-			pesh.Extension.Data.PTS[i] = data[index+i]
+			extensionHeaders.Data.PTS[i] = data[index+i]
 		}
 		// done
 		index += PTSSize
 		// fmt.Println("PTS extracted !")
 	}
-	if pesh.Extension.PTSDTSPresence()&JustDTS == JustDTS {
+	if extensionHeaders.PTSDTSPresence()&JustDTS == JustDTS {
 		DTSSize := 5
-		pesh.Extension.Data.DTS = make([]byte, DTSSize)
+		extensionHeaders.Data.DTS = make([]byte, DTSSize)
 		for i := range DTSSize {
-			pesh.Extension.Data.DTS[i] = data[index+i]
+			extensionHeaders.Data.DTS[i] = data[index+i]
 		}
 		// done
 		index += DTSSize
 		// fmt.Println("DTS extracted !")
 	}
 	// ESCR
-	if pesh.Extension.ESCRPresent() {
+	if extensionHeaders.ESCRPresent() {
 		ESCRSize := 6
-		pesh.Extension.Data.ESCR = make([]byte, ESCRSize)
+		extensionHeaders.Data.ESCR = make([]byte, ESCRSize)
 		for i := range ESCRSize {
-			pesh.Extension.Data.ESCR[i] = data[index+i]
+			extensionHeaders.Data.ESCR[i] = data[index+i]
 		}
 		// done
 		index += ESCRSize
 		// fmt.Println("ESCR extracted !")
 	}
 	// ES rate
-	if pesh.Extension.ESRatePresent() {
+	if extensionHeaders.ESRatePresent() {
 		ESRateSize := 3
-		pesh.Extension.Data.ESRate = make([]byte, ESRateSize)
+		extensionHeaders.Data.ESRate = make([]byte, ESRateSize)
 		for i := range ESRateSize {
-			pesh.Extension.Data.ESRate[i] = data[index+i]
+			extensionHeaders.Data.ESRate[i] = data[index+i]
 		}
 		// done
 		index += ESRateSize
 		// fmt.Println("ESRate extracted !")
 	}
 	// additional copy info
-	if pesh.Extension.AdditionalCopyInfoPresent() {
+	if extensionHeaders.AdditionalCopyInfoPresent() {
 		// Check fixed bit
 		if data[index]&0b10000000 != 0b10000000 {
 			err = errors.New("additionnal copy info fixed bit is invalid")
@@ -307,99 +357,93 @@ func (pesh PESHeader) ParseExtensionData(data []byte) (err error) {
 		}
 		// Extract value
 		value := data[index] & 0b01111111
-		pesh.Extension.Data.AdditionalCopyInfo = &value
+		extensionHeaders.Data.AdditionalCopyInfo = &value
 		// done
 		index++
 		// fmt.Println("Additional Copy Info parsed !")
 	}
 	// PES CRC
-	if pesh.Extension.CRCPresent() {
+	if extensionHeaders.CRCPresent() {
 		CRCSize := 2
-		pesh.Extension.Data.PreviousPacketCRC = make([]byte, CRCSize)
+		extensionHeaders.Data.PreviousPacketCRC = make([]byte, CRCSize)
 		for i := range CRCSize {
-			pesh.Extension.Data.PreviousPacketCRC[i] = data[index+i]
+			extensionHeaders.Data.PreviousPacketCRC[i] = data[index+i]
 		}
 		// done
 		index += CRCSize
 		// fmt.Println("ESRate extracted !")
 	}
 	// PES extension flag
-	if pesh.Extension.SecondExtensionPresent() {
-		headers := data[index]
-		index++
-		// PES private data flag
-		if headers&0b10000000 == 0b10000000 {
-			privateDataSize := 16
-			pesh.Extension.Data.PrivateData = make([]byte, privateDataSize)
-			for i := range privateDataSize {
-				pesh.Extension.Data.PrivateData[i] = data[index+i]
-			}
-			index += privateDataSize
-			// fmt.Println("Private Data extracted !")
-		}
-		// pack header field flag
-		if headers&0b01000000 == 0b01000000 {
-			value := data[index]
-			pesh.Extension.Data.PackHeaderField = &value
-			// fmt.Println("PackHeader field flag set in the PES extension data: unsure of subsequent read") // mmm
-			index++
-		}
-		// program packet sequence counter flag
-		if headers&0b00100000 == 0b00100000 {
-			programPacketSequenceCounterSize := 2
-			pesh.Extension.Data.ProgramPacketSequenceCounter = make([]byte, programPacketSequenceCounterSize)
-			for i := range programPacketSequenceCounterSize {
-				pesh.Extension.Data.ProgramPacketSequenceCounter[i] = data[index+i]
-			}
-			index += programPacketSequenceCounterSize
-			// fmt.Println("program packet sequence counter extracted !")
-		}
-		// P-STD buffer flag
-		if headers&0b00010000 == 0b00010000 {
-			PSTDSize := 2
-			pesh.Extension.Data.PSTD = make([]byte, PSTDSize)
-			for i := range PSTDSize {
-				pesh.Extension.Data.PSTD[i] = data[index+i]
-			}
-			index += PSTDSize
-			// fmt.Println("P-STD buffer extracted !")
-		}
-		// Fixed bytes
-		if headers&0b00001110 != 0b00001110 {
-			err = fmt.Errorf("PES second extension headers fixed bytes are invalid")
-			return
-		}
-		// PES extension flag 2
-		if headers&0b000000001 == 0b000000001 {
-			// Parse headers
-			PESExtensionSize := 2
-			header := make([]byte, PESExtensionSize)
-			for i := range PESExtensionSize {
-				header[i] = data[index+i]
-			}
-			index += PESExtensionSize
-			// Extract data
-			additionnalDataLen := int(header[0] & 0b01111111)
-			//// header[1] is reserved for futur use
-			pesh.Extension.Data.PESExtensionSecond = make([]byte, additionnalDataLen)
-			for i := range additionnalDataLen {
-				pesh.Extension.Data.PSTD[i] = data[index+i]
-			}
-			index += additionnalDataLen
-			// fmt.Println("PES Extension 2 data extracted !")
-		}
+	if !extensionHeaders.SecondExtensionPresent() {
+		return
 	}
-	// Check final padding
-	for i := index; i < len(data); i++ {
-		if data[i] != 0xFF {
-			err = fmt.Errorf("invalid padding at the end of the extension data")
-			return
+	headers := data[index]
+	index++
+	// PES private data flag
+	if headers&0b10000000 == 0b10000000 {
+		privateDataSize := 16
+		extensionHeaders.Data.PrivateData = make([]byte, privateDataSize)
+		for i := range privateDataSize {
+			extensionHeaders.Data.PrivateData[i] = data[index+i]
 		}
-		// fmt.Println("valid padding yay")
+		index += privateDataSize
+		// fmt.Println("Private Data extracted !")
+	}
+	// pack header field flag
+	if headers&0b01000000 == 0b01000000 {
+		value := data[index]
+		extensionHeaders.Data.PackHeaderField = &value
+		// fmt.Println("PackHeader field flag set in the PES extension data: unsure of subsequent read") // mmm
+		index++
+	}
+	// program packet sequence counter flag
+	if headers&0b00100000 == 0b00100000 {
+		programPacketSequenceCounterSize := 2
+		extensionHeaders.Data.ProgramPacketSequenceCounter = make([]byte, programPacketSequenceCounterSize)
+		for i := range programPacketSequenceCounterSize {
+			extensionHeaders.Data.ProgramPacketSequenceCounter[i] = data[index+i]
+		}
+		index += programPacketSequenceCounterSize
+		// fmt.Println("program packet sequence counter extracted !")
+	}
+	// P-STD buffer flag
+	if headers&0b00010000 == 0b00010000 {
+		PSTDSize := 2
+		extensionHeaders.Data.PSTD = make([]byte, PSTDSize)
+		for i := range PSTDSize {
+			extensionHeaders.Data.PSTD[i] = data[index+i]
+		}
+		index += PSTDSize
+		// fmt.Println("P-STD buffer extracted !")
+	}
+	// Fixed bytes
+	if headers&0b00001110 != 0b00001110 {
+		err = fmt.Errorf("PES second extension headers fixed bytes are invalid")
+		return
+	}
+	// PES extension flag 2
+	if headers&0b000000001 == 0b000000001 {
+		// Parse headers
+		PESExtensionSize := 2
+		header := make([]byte, PESExtensionSize)
+		for i := range PESExtensionSize {
+			header[i] = data[index+i]
+		}
+		index += PESExtensionSize
+		// Extract data
+		additionnalDataLen := int(header[0] & 0b01111111)
+		//// header[1] is reserved for futur use
+		extensionHeaders.Data.PESExtensionSecond = make([]byte, additionnalDataLen)
+		for i := range additionnalDataLen {
+			extensionHeaders.Data.PSTD[i] = data[index+i]
+		}
+		index += additionnalDataLen
+		// fmt.Println("PES Extension 2 data extracted !")
 	}
 	return
 }
 
+// PESExtensionData is the dynamic data contained in the PES extension
 type PESExtensionData struct {
 	PTS                []byte // Presentation Time Stamp
 	DTS                []byte // Decode Time Stamp
@@ -415,25 +459,7 @@ type PESExtensionData struct {
 	PESExtensionSecond           []byte
 }
 
-func (pesed *PESExtensionData) Len() (length int) {
-	length += len(pesed.DTS)
-	length += len(pesed.DTS)
-	length += len(pesed.ESCR)
-	length += len(pesed.ESRate)
-	if pesed.AdditionalCopyInfo != nil {
-		length++
-	}
-	length += len(pesed.PreviousPacketCRC)
-	length += len(pesed.PrivateData)
-	if pesed.PackHeaderField != nil {
-		length++
-	}
-	length += len(pesed.ProgramPacketSequenceCounter)
-	length += len(pesed.PSTD)
-	length += len(pesed.PESExtensionSecond)
-	return
-}
-
+// ComputePTS computes the Presentation Time Stamp value
 func (pesed *PESExtensionData) ComputePTS() (pts time.Duration) {
 	if len(pesed.PTS) == 0 {
 		return
@@ -445,4 +471,35 @@ func (pesed *PESExtensionData) ComputePTS() (pts time.Duration) {
 	ticks |= uint64(pesed.PTS[3]) << 7
 	ticks |= uint64(pesed.PTS[4]&0b11111110) >> 1
 	return time.Duration(ticks * uint64(time.Second) / PTSDTSClockFrequency)
+}
+
+// ComputeDTS computes the Decode Time Stamp value
+func (pesed *PESExtensionData) ComputeDTS() (pts time.Duration) {
+	if len(pesed.PTS) == 0 {
+		return
+	}
+	var ticks uint64
+	ticks |= (uint64(pesed.PTS[0]&0b00001110) >> 1) << 30
+	ticks |= uint64(pesed.PTS[1]) << 22
+	ticks |= (uint64(pesed.PTS[2]&0b11111110) >> 1) << 15
+	ticks |= uint64(pesed.PTS[3]) << 7
+	ticks |= uint64(pesed.PTS[4]&0b11111110) >> 1
+	return time.Duration(ticks * uint64(time.Second) / PTSDTSClockFrequency)
+}
+
+/*
+	SubStreamID for private streams
+*/
+
+const (
+	// SubStreamIDBaseValue is the base value used by all sub stream IDs
+	SubStreamIDBaseValue = 0x20
+)
+
+// SubStreamID represents a sub stream ID in a PES packet (only for private streams)
+type SubStreamID [1]byte
+
+// SubtitleID returns the actual subtitle stream ID by substracting the base value
+func (ssid SubStreamID) SubtitleID() int {
+	return int(ssid[0]) - SubStreamIDBaseValue
 }
