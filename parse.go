@@ -319,3 +319,33 @@ func parsePESExtensionData(extensionHeaders *PESExtension, data []byte) (index i
 	}
 	return
 }
+
+func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
+	// Read the size first
+	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
+	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
+	if len(packet.Payload) != size {
+		err = fmt.Errorf("the read packet size (%d) does not match the received packet length (%d)", size, len(packet.Payload))
+		return
+	}
+	// Read the data packet size to split the data and the control sequences
+	dataSize := int(packet.Payload[2])<<8 | int(packet.Payload[3])
+	// fmt.Printf("Data Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[2], packet.Payload[3], dataSize)
+	if dataSize > len(packet.Payload)-2 {
+		err = fmt.Errorf("the read data packet size (%d) is greater than the total packet size (%d)", size, len(packet.Payload))
+		return
+	}
+	// Split
+	subtitle.data = packet.Payload[2+2 : 2+dataSize] // need to check this
+	ctrlseqs := packet.Payload[2+dataSize:]
+	fmt.Printf("Data len is %d and ctrl seq len is %d\n", len(subtitle.data), len(ctrlseqs))
+	// Parse control sequences
+	err = parseCTRLSeq(ctrlseqs)
+	// Decode image
+	//// TODO
+	return
+}
+
+func parseCTRLSeq(sequences []byte) (err error) {
+	return
+}

@@ -14,18 +14,29 @@ func ReadVobSub(subFile string) (err error) {
 		err = fmt.Errorf("failed to read .sub file: %w", err)
 		return
 	}
-	// Filter private stream 1 packets
+	// Concat splitted packets
 	subtitlesPackets := make([]PESPacket, 0, len(privateStream1Packets))
 	for _, pkt := range privateStream1Packets {
 		if pkt.Header.Extension.Data.ComputePTS() != 0 {
+			// New subtitle
 			subtitlesPackets = append(subtitlesPackets, pkt)
+		} else {
+			// Subtitle has been split in multiples packets, concat to current sub
+			currentSub := subtitlesPackets[len(subtitlesPackets)-1]
+			currentSub.Payload = append(currentSub.Payload, pkt.Payload...)
+			subtitlesPackets[len(subtitlesPackets)-1] = currentSub
 		}
 	}
 	// Handle retained subtitles
-	for index, sub := range subtitlesPackets {
+	for index, subPkt := range subtitlesPackets {
 		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Start: %s Payload: %d\n",
-			index+1, sub.Header.SubStreamID.SubtitleID(), sub.Header.Extension.Data.ComputePTS(), len(sub.Payload),
+			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		)
+		_, err = parseSubtitle(subPkt)
+		if err != nil {
+			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
+			return
+		}
 	}
 	return
 }
