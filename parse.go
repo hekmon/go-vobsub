@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 const (
@@ -328,7 +329,7 @@ func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
 		err = fmt.Errorf("the read packet size (%d) does not match the received packet length (%d)", size, len(packet.Payload))
 		return
 	}
-	// Read the data packet size to split the data and the control sequences
+	// Read the data packet size in order to split the data and the control sequences
 	dataSize := int(packet.Payload[2])<<8 | int(packet.Payload[3])
 	// fmt.Printf("Data Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[2], packet.Payload[3], dataSize)
 	if dataSize > len(packet.Payload)-2 {
@@ -336,16 +337,102 @@ func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
 		return
 	}
 	// Split
-	subtitle.data = packet.Payload[2+2 : 2+dataSize] // need to check this
-	ctrlseqs := packet.Payload[2+dataSize:]
+	subtitle.data = packet.Payload[4:dataSize]
+	ctrlseqs := packet.Payload[dataSize:]
 	fmt.Printf("Data len is %d and ctrl seq len is %d\n", len(subtitle.data), len(ctrlseqs))
+	fmt.Printf("Control Sequence: %08b\n", ctrlseqs)
 	// Parse control sequences
-	err = parseCTRLSeq(ctrlseqs)
+	err = parseCTRLSeqs(ctrlseqs, dataSize)
+	if err != nil {
+		err = fmt.Errorf("failed to parse control sequences: %w", err)
+		return
+	}
 	// Decode image
 	//// TODO
 	return
 }
 
-func parseCTRLSeq(sequences []byte) (err error) {
+func parseCTRLSeqs(sequences []byte, zeroOffset int) (err error) {
+	index := 0
+	nbSeqs := 0
+	nextOffset := 0
+	lastIndex := 0
+	for {
+		nbSeqs++
+		if nextOffset, lastIndex, err = parseCTRLSeq(sequences, index); err != nil {
+			err = fmt.Errorf("failed to parse control seq #%d: %w", nbSeqs, err)
+			return
+		}
+		if (nextOffset - zeroOffset) == index {
+			// next offset is us, meaning we are the last control seq
+			break
+		}
+		index = nextOffset - zeroOffset
+	}
+	fmt.Printf("read %d sequences, last index is %d on %d\n", nbSeqs, lastIndex, len(sequences))
+	for i := lastIndex; i < len(sequences); i++ {
+		if sequences[i] != 0xff {
+			err = errors.New("control sequences post commands bytes are not padding")
+			return
+		}
+	}
+	return
+}
+
+func parseCTRLSeq(sequences []byte, index int) (nextOffset, lastIndex int, err error) {
+	fmt.Println("Sequence CTRL")
+	if index+4 > len(sequences) {
+		err = fmt.Errorf("can not parse sequence: current index is %d and sequences length is %d: need at least 4 bytes to read date and next offset",
+			index, len(sequences),
+		)
+		return
+	}
+	// Extract date
+	date := int(sequences[index+0])<<8 | int(sequences[index+1])
+	index += 2
+	delay := time.Duration(date) * (time.Second / 100)
+	fmt.Println(" Delay is", delay)
+	// Extract next sequence offset
+	nextOffset = int(sequences[index+0])<<8 | int(sequences[index+1])
+	index += 2
+	fmt.Println(" next offset is", nextOffset)
+	// Read commands
+commands:
+	for {
+		if index >= len(sequences) {
+			err = fmt.Errorf("can not read sequence command: index is %d and sequences length is %d: need at least one byte to read the command",
+				index, len(sequences),
+			)
+			return
+		}
+		cmd := sequences[index]
+		index++
+		switch cmd {
+		case subtitleCTRLSeqCmdForceDisplaying:
+			fmt.Println("  Force displaying")
+		case subtitleCTRLSeqCmdStartDate:
+			fmt.Println("  StartDateCMD")
+		case subtitleCTRLSeqCmdStopDate:
+			fmt.Println("  StopDateCMD")
+		case subtitleCTRLSeqCmdPalette:
+			fmt.Println("  PaletteCMD")
+			index += 2 // args
+		case subtitleCTRLSeqCmdAlphaChannel:
+			fmt.Println("  AlphaChannelCMD")
+			index += 2 // args
+		case subtitleCTRLSeqCmdCoordinates:
+			fmt.Println("  CmdCoordinatesCMD")
+			index += 6 // args
+		case subtitleCTRLSeqCmdRLEOffsets:
+			fmt.Println("  RLEOffsetsCMD")
+			index += 4 // args
+		case subtitleCTRLSeqCmdEnd:
+			fmt.Println("  EndCMD")
+			break commands
+		default:
+			err = fmt.Errorf("unknown command: 0x%02x", cmd)
+		}
+	}
+	lastIndex = index
 	return
 }
