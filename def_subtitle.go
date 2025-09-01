@@ -101,10 +101,10 @@ func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
 		err = fmt.Errorf("even lines max line pixels (%d) is greater than subtitle window width (%d)", evenLines.MaxLinePixels(), subtitleWindowWidth)
 		return
 	}
+	// Deinterlace
 	fmt.Printf("\t%d lines (%d oddLines, %d evenLines). Max len on odd: %d. Max len on even: %d.\n",
 		len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
 	)
-	// Deinterlace
 	if len(evenLines) > len(oddLines) {
 		// should not happen, just to be sure
 		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines), len(oddLines))
@@ -130,7 +130,6 @@ func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
 	fmt.Printf("\tFinal lines: %d\n", len(orderedLines))
 	// Create the image
 	//// TODO (need idx infos first)
-
 	return
 }
 
