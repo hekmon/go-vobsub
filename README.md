@@ -10,5 +10,6 @@ WIP DO NOT USE
 * https://dvd.sourceforge.net/dvdinfo/mpeghdrs.html
 * https://dvd.sourceforge.net/dvdinfo/packhdr.html
 * https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
+* https://dvd.sourceforge.net/spu_notes
 * https://sam.zoy.org/writings/dvd/subtitles/
 * https://unix4lyfe.org/mpeg1/
