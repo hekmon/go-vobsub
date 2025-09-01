@@ -3,6 +3,7 @@ package vobsub
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"strings"
 	"time"
 )
@@ -16,6 +17,7 @@ const (
 	subtitleCTRLSeqCmdPaletteArgsLen      = 2
 	subtitleCTRLSeqCmdAlphaChannel        = 0x04
 	subtitleCTRLSeqCmdAlphaChannelArgsLen = 2
+	subtitleCTRLSeqCmdAlphaChannelRatio   = float64(1) / float64(16) // Alphas levels are encoded on 4 bits : 0 (transparent) to 15 (opaque)
 	subtitleCTRLSeqCmdCoordinates         = 0x05
 	subtitleCTRLSeqCmdCoordinatesArgsLen  = 6
 	subtitleCTRLSeqCmdRLEOffsets          = 0x06
@@ -25,69 +27,102 @@ const (
 
 type SubtitleRAW struct {
 	Data             []byte
-	ControlSequences []ControlSequence
+	ControlSequences ControlSequences
+}
+
+func (sr SubtitleRAW) GetImage(palette color.Palette) {
+
+}
+
+type ControlSequences []ControlSequence
+
+func (css ControlSequences) ExtractInfos() (startDelay, stopDelay time.Duration, paletteColors, alphaChannels, coordinates, RLEOffsets []byte) {
+	// for _, cs := range css {
+	// if cs.StartDate {
+	// 	startDelay = cs.GetDelay()
+	// } else if cs.StopDate {
+	// 	stopDelay = cs.GetDelay()
+	// }
+	// if cs.PaletteColors != nil {
+	// 	paletteColors = make()
+	// 	paletteColors = *cs.PaletteColors
+	// }
+	// if cs.AlphaChannels != nil {
+	// 	alphaChannels = *cs.AlphaChannels
+	// }
+	// if cs.Coordinates != nil {
+	// 	coordinates = *cs.Coordinates
+	// }
+	// if cs.RLEOffsets != nil {
+	// 	RLEOffsets = *cs.RLEOffsets
+	// }
+	// }
+	return
 }
 
 type ControlSequence struct {
-	Date            [subtitleCTRLSeqDateLen]byte
+	Date            ControlSequenceDate
 	ForceDisplaying bool
 	StartDate       bool
 	StopDate        bool
-	PaletteColors   *[subtitleCTRLSeqCmdPaletteArgsLen]byte
-	AlphaChannels   *[subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
-	Coordinates     *[subtitleCTRLSeqCmdCoordinatesArgsLen]byte
-	RLEOffsets      *[subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
+	PaletteColors   *ControlSequencePalette
+	AlphaChannels   *ControlSequenceAlphaChannels
+	Coordinates     *ControlSequenceCoordinates
+	RLEOffsets      *ControlSequenceRLEOffsets
 }
+
+type ControlSequenceDate [subtitleCTRLSeqDateLen]byte
 
 // GetDelay convert the control sequence date to the actual delay it represents
-func (cs ControlSequence) GetDelay() time.Duration {
-	return time.Duration(int(cs.Date[0])<<8|int(cs.Date[1])) * (time.Second / 100)
+func (csd ControlSequenceDate) GetDelay() time.Duration {
+	return time.Duration(int(csd[0])<<8|int(csd[1])) * (time.Second / 100)
 }
 
-// GetPalette returns the palette IDs that are used by the 4 subtitle colors
-func (cs ControlSequence) GetPalette() (color1, color2, color3, color4 PaletteColorID) {
-	if cs.PaletteColors == nil {
-		return
-	}
-	color1 = PaletteColorID(cs.PaletteColors[0] & 0b11110000 >> 4)
-	color2 = PaletteColorID(cs.PaletteColors[0] & 0b00001111)
-	color3 = PaletteColorID(cs.PaletteColors[1] & 0b11110000 >> 4)
-	color4 = PaletteColorID(cs.PaletteColors[1] & 0b00001111)
+type ControlSequencePalette [subtitleCTRLSeqCmdPaletteArgsLen]byte
+
+// GetPaletteIDs returns the 4 palette IDs colors that are used by the subtitle
+func (csp ControlSequencePalette) GetIDs() (color1, color2, color3, color4 uint8) {
+	color1 = uint8(csp[0] & 0b11110000 >> 4)
+	color2 = uint8(csp[0] & 0b00001111)
+	color3 = uint8(csp[1] & 0b11110000 >> 4)
+	color4 = uint8(csp[1] & 0b00001111)
 	return
 }
 
-func (cs ControlSequence) GetAlphaChannels() (color1, color2, color3, color4 uint8) {
-	color1 = uint8(cs.AlphaChannels[0] & 0b11110000 >> 4)
-	color2 = uint8(cs.AlphaChannels[0] & 0b00001111)
-	color3 = uint8(cs.AlphaChannels[1] & 0b11110000 >> 4)
-	color4 = uint8(cs.AlphaChannels[1] & 0b00001111)
+type ControlSequenceAlphaChannels [subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
+
+// GetAlphaChannelRatios return the ratios of the alpha channels used by the 4 colors of the subtitle.
+// 0 means full transparent, 1 means 100% opaque (actually 100% of the maximum opacity defined in the idx file, often 100% itself)
+func (csac ControlSequenceAlphaChannels) GetRatios() (alpha1, alpha2, alpha3, alpha4 float64) {
+	alpha1 = float64(int(csac[0]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alpha2 = float64(int(csac[0]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alpha3 = float64(int(csac[1]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alpha4 = float64(int(csac[1]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
 	return
 }
+
+type ControlSequenceCoordinates [subtitleCTRLSeqCmdCoordinatesArgsLen]byte
 
 // GetCoordinates returns the coordinates of the subtitle canvea on the screen : x1, x2, y1, y2
-func (cs ControlSequence) GetCoordinates() (coord SubtitleCoordinates) {
-	if cs.Coordinates == nil {
-		return
-	}
-	coord.X1 = int(cs.Coordinates[0])<<4 | int(cs.Coordinates[1]&0b11110000)>>4
-	coord.X2 = int(cs.Coordinates[1]&0b00001111)<<8 | int(cs.Coordinates[2])
-	coord.Y1 = int(cs.Coordinates[3])<<4 | int(cs.Coordinates[4]&0b11110000)>>4
-	coord.Y2 = int(cs.Coordinates[4]&0b00001111)<<8 | int(cs.Coordinates[5])
+func (csc ControlSequenceCoordinates) Get() (coord SubtitleCoordinates) {
+	coord.Point1.X = int(csc[0])<<4 | int(csc[1]&0b11110000)>>4
+	coord.Point2.X = int(csc[1]&0b00001111)<<8 | int(csc[2])
+	coord.Point1.Y = int(csc[3])<<4 | int(csc[4]&0b11110000)>>4
+	coord.Point2.Y = int(csc[4]&0b00001111)<<8 | int(csc[5])
 	return
 }
 
-func (cs ControlSequence) GetRLEOffsets() (firstLineOffset int, secondLineOffset int) {
-	if cs.RLEOffsets == nil {
-		return
-	}
-	firstLineOffset = int(cs.RLEOffsets[0])<<8 | int(cs.RLEOffsets[1])
-	secondLineOffset = int(cs.RLEOffsets[2])<<8 | int(cs.RLEOffsets[3])
+type ControlSequenceRLEOffsets [subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
+
+func (csrleo ControlSequenceRLEOffsets) Get() (firstLineOffset int, secondLineOffset int) {
+	firstLineOffset = int(csrleo[0])<<8 | int(csrleo[1])
+	secondLineOffset = int(csrleo[2])<<8 | int(csrleo[3])
 	return
 }
 
 func (cs ControlSequence) String() string {
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("Delay: %s", cs.GetDelay()))
+	builder.WriteString(fmt.Sprintf("Delay: %s", cs.Date.GetDelay()))
 	// Force Displaying
 	if cs.ForceDisplaying {
 		builder.WriteString(" | Force Displaying")
@@ -102,7 +137,7 @@ func (cs ControlSequence) String() string {
 	}
 	// Palette
 	if cs.PaletteColors != nil {
-		c1, c2, c3, c4 := cs.GetPalette()
+		c1, c2, c3, c4 := cs.PaletteColors.GetIDs()
 		builder.WriteString(
 			fmt.Sprintf(" | Palette: color1(%d) color2(%d) color3(%d) color4(%d)",
 				c1, c2, c3, c4,
@@ -111,19 +146,19 @@ func (cs ControlSequence) String() string {
 	}
 	// AlphaChannel
 	if cs.AlphaChannels != nil {
-		c1, c2, c3, c4 := cs.GetAlphaChannels()
+		c1, c2, c3, c4 := cs.AlphaChannels.GetRatios()
 		builder.WriteString(
-			fmt.Sprintf(" | AlphaChannels: color1(%d) color2(%d) color3(%d) color4(%d)",
+			fmt.Sprintf(" | AlphaChannels: color1(%f) color2(%f) color3(%f) color4(%f)",
 				c1, c2, c3, c4,
 			),
 		)
 	}
 	// Coordinates
 	if cs.Coordinates != nil {
-		coord := cs.GetCoordinates()
+		coord := cs.Coordinates.Get()
 		builder.WriteString(
 			fmt.Sprintf(" | Coordinates: x1(%d) x2(%d) y1(%d) y2(%d)",
-				coord.X1, coord.X2, coord.Y1, coord.Y2,
+				coord.Point1.X, coord.Point2.X, coord.Point1.Y, coord.Point2.Y,
 			),
 		)
 		width, length := coord.Size()
@@ -135,7 +170,7 @@ func (cs ControlSequence) String() string {
 	}
 	// RLE Offsets
 	if cs.RLEOffsets != nil {
-		firstLineOffset, secondLineOffset := cs.GetRLEOffsets()
+		firstLineOffset, secondLineOffset := cs.RLEOffsets.Get()
 		builder.WriteString(
 			fmt.Sprintf(" | RLE Offsets: 1st(%d) 2nd(%d)", firstLineOffset, secondLineOffset),
 		)
@@ -143,16 +178,16 @@ func (cs ControlSequence) String() string {
 	return builder.String()
 }
 
-// PaletteColorID contains the ID of a color in the palette. It is used to select the color for the subtitle text.
-type PaletteColorID uint8
-
 type SubtitleCoordinates struct {
-	X1, X2 int
-	Y1, Y2 int
+	Point1, Point2 Coordinate
+}
+
+type Coordinate struct {
+	X, Y int
 }
 
 func (coord SubtitleCoordinates) Size() (width, length int) {
-	return coord.X2 - coord.X1 + 1, coord.Y2 - coord.Y1 + 1
+	return coord.Point2.X - coord.Point1.X + 1, coord.Point2.Y - coord.Point1.Y + 1
 }
 
 /*
@@ -252,7 +287,7 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.PaletteColors = new([subtitleCTRLSeqCmdPaletteArgsLen]byte)
+			cs.PaletteColors = new(ControlSequencePalette)
 			for i := range subtitleCTRLSeqCmdPaletteArgsLen {
 				cs.PaletteColors[i] = sequences[index+i]
 			}
@@ -264,7 +299,7 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.AlphaChannels = new([subtitleCTRLSeqCmdAlphaChannelArgsLen]byte)
+			cs.AlphaChannels = new(ControlSequenceAlphaChannels)
 			for i := range subtitleCTRLSeqCmdAlphaChannelArgsLen {
 				cs.AlphaChannels[i] = sequences[index+i]
 			}
@@ -276,7 +311,7 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.Coordinates = new([subtitleCTRLSeqCmdCoordinatesArgsLen]byte)
+			cs.Coordinates = new(ControlSequenceCoordinates)
 			for i := range subtitleCTRLSeqCmdCoordinatesArgsLen {
 				cs.Coordinates[i] = sequences[index+i]
 			}
@@ -288,7 +323,7 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.RLEOffsets = new([subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte)
+			cs.RLEOffsets = new(ControlSequenceRLEOffsets)
 			for i := range subtitleCTRLSeqCmdRLEOffsetsArgsLen {
 				cs.RLEOffsets[i] = sequences[index+i]
 			}
