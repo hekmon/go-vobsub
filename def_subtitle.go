@@ -5,6 +5,7 @@ const (
 	subtitleCTRLSeqCmdStartDate       = 0x01
 	subtitleCTRLSeqCmdStopDate        = 0x02
 	subtitleCTRLSeqCmdPalette         = 0x03
+	subtitleCTRLSeqCmdPaletteArgsLen  = 2
 	subtitleCTRLSeqCmdAlphaChannel    = 0x04
 	subtitleCTRLSeqCmdCoordinates     = 0x05
 	subtitleCTRLSeqCmdRLEOffsets      = 0x06

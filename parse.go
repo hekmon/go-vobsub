@@ -352,7 +352,7 @@ func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
 	return
 }
 
-func parseCTRLSeqs(sequences []byte, zeroOffset int) (err error) {
+func parseCTRLSeqs(sequences []byte, baseOffset int) (err error) {
 	index := 0
 	nbSeqs := 0
 	nextOffset := 0
@@ -363,11 +363,11 @@ func parseCTRLSeqs(sequences []byte, zeroOffset int) (err error) {
 			err = fmt.Errorf("failed to parse control seq #%d: %w", nbSeqs, err)
 			return
 		}
-		if (nextOffset - zeroOffset) == index {
+		if (nextOffset - baseOffset) == index {
 			// next offset is us, meaning we are the last control seq
 			break
 		}
-		index = nextOffset - zeroOffset
+		index = nextOffset - baseOffset
 	}
 	fmt.Printf("read %d sequences, last index is %d on %d\n", nbSeqs, lastIndex, len(sequences))
 	for i := lastIndex; i < len(sequences); i++ {
@@ -416,7 +416,13 @@ commands:
 			fmt.Println("  StopDateCMD")
 		case subtitleCTRLSeqCmdPalette:
 			fmt.Println("  PaletteCMD")
-			index += 2 // args
+			if index+subtitleCTRLSeqCmdPaletteArgsLen > len(sequences) {
+				err = fmt.Errorf("can not read palette command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
+					index, len(sequences), subtitleCTRLSeqCmdPaletteArgsLen,
+				)
+				return
+			}
+			index += subtitleCTRLSeqCmdPaletteArgsLen
 		case subtitleCTRLSeqCmdAlphaChannel:
 			fmt.Println("  AlphaChannelCMD")
 			index += 2 // args
