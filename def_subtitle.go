@@ -105,6 +105,11 @@ func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
 		len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
 	)
 	// Deinterlace
+	if len(evenLines) > len(oddLines) {
+		// should not happen, just to be sure
+		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines), len(oddLines))
+		return
+	}
 	orderedLines := make(rleLines, 0, len(oddLines)+len(evenLines))
 	for i := range oddLines {
 		orderedLines = append(orderedLines, oddLines[i])
@@ -125,6 +130,7 @@ func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
 	fmt.Printf("\tFinal lines: %d\n", len(orderedLines))
 	// Create the image
 	//// TODO (need idx infos first)
+
 	return
 }
 
@@ -516,7 +522,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 				return
 			}
 			// nbZeroesEncountered++ // unecessary
-			// pass the 4th nibble (should be 0 as well, but others values as been seen in the wild (see spu_notes))
+			// discard the 4th nibble (should be 0 as well, but others values as been seen in the wild (see spu_notes))
 			var high bool
 			if _, high, ok = nibbles.Next(); !ok {
 				err = errors.New("unexpected end (point H)")
