@@ -37,9 +37,14 @@ func ReadVobSub(subFile string) (err error) {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
 			return
 		}
-		for _, ctrlSequence := range subtitle.ControlSequences {
-			fmt.Printf("\t%s\n", ctrlSequence)
+		// for _, ctrlSequence := range subtitle.ControlSequences {
+		// 	fmt.Printf("\t%s\n", ctrlSequence)
+		// }
+		if err = subtitle.Convert(nil); err != nil {
+			err = fmt.Errorf("failed to decode subtitle: %w", err)
+			return
 		}
+		fmt.Println()
 	}
 	return
 }

@@ -27,36 +27,110 @@ const (
 
 type SubtitleRAW struct {
 	Data             []byte
-	ControlSequences ControlSequences
+	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) GetImage(palette color.Palette) {
-
-}
-
-type ControlSequences []ControlSequence
-
-func (css ControlSequences) ExtractInfos() (startDelay, stopDelay time.Duration, paletteColors, alphaChannels, coordinates, RLEOffsets []byte) {
-	// for _, cs := range css {
-	// if cs.StartDate {
-	// 	startDelay = cs.GetDelay()
-	// } else if cs.StopDate {
-	// 	stopDelay = cs.GetDelay()
-	// }
-	// if cs.PaletteColors != nil {
-	// 	paletteColors = make()
-	// 	paletteColors = *cs.PaletteColors
-	// }
-	// if cs.AlphaChannels != nil {
-	// 	alphaChannels = *cs.AlphaChannels
-	// }
-	// if cs.Coordinates != nil {
-	// 	coordinates = *cs.Coordinates
-	// }
-	// if cs.RLEOffsets != nil {
-	// 	RLEOffsets = *cs.RLEOffsets
-	// }
-	// }
+func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
+	// Consolidate rendering metadata
+	var (
+		startDelay, stopDelay time.Duration
+		paletteColors         *ControlSequencePalette
+		alphaChannels         *ControlSequenceAlphaChannels
+		coordinates           *ControlSequenceCoordinates
+		RLEOffsets            *ControlSequenceRLEOffsets
+	)
+	for _, cs := range sr.ControlSequences {
+		if cs.StartDate {
+			startDelay = cs.Date.GetDelay()
+		} else if cs.StopDate {
+			stopDelay = cs.Date.GetDelay()
+		}
+		if cs.PaletteColors != nil {
+			paletteColors = cs.PaletteColors
+		}
+		if cs.AlphaChannels != nil {
+			alphaChannels = cs.AlphaChannels
+		}
+		if cs.Coordinates != nil {
+			coordinates = cs.Coordinates
+		}
+		if cs.RLEOffsets != nil {
+			RLEOffsets = cs.RLEOffsets
+		}
+	}
+	if paletteColors == nil {
+		err = fmt.Errorf("missing palette colors ids in subtitle")
+		return
+	}
+	if alphaChannels == nil {
+		err = fmt.Errorf("missing alpha channels ids in subtitle")
+		return
+	}
+	if coordinates == nil {
+		err = fmt.Errorf("missing coordinates in subtitle")
+		return
+	}
+	if RLEOffsets == nil {
+		err = fmt.Errorf("missing RLE offsets in subtitle")
+		return
+	}
+	// Ready to decode
+	fmt.Printf("Start delay: %s, Stop delay: %s\n", startDelay, stopDelay)
+	startOffset, _ := RLEOffsets.Get()
+	nibbles := nibbleIterator{data: sr.Data, index: startOffset}
+	nbZeroesEncountered := 0
+	nbPixels := 0
+	nbLines := 0
+	for nibble, _, ok := nibbles.Next(); ok; nibble, _, ok = nibbles.Next() {
+		switch nbZeroesEncountered {
+		case 0, 1:
+			switch nibble {
+			case 0xf, 0xe, 0xd, 0xc, 0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4:
+				fmt.Printf("Color: %d | Repeat: %d\n", nibble&0b00000011, nibble>>2)
+				nbZeroesEncountered = 0
+				nbPixels += int(nibble >> 2)
+			case 0x3, 0x2, 0x1:
+				value := nibble << 4
+				if nibble, _, ok = nibbles.Next(); !ok {
+					panic("argA")
+				}
+				value |= nibble
+				fmt.Printf("Color: %d | Repeat: %d\n", value&0b00000011, value>>2)
+				nbZeroesEncountered = 0
+				nbPixels += int(value >> 2)
+			case 0x0:
+				nbZeroesEncountered++
+			default:
+				panic("argB")
+			}
+		case 2:
+			var high bool
+			// line carriage, read the last nimble as start a new line
+			if nibble, high, ok = nibbles.Next(); !ok {
+				panic("argC")
+			}
+			if nibble != 0 {
+				// after 2 0-nimble, only possibilities in the alphabet should be a third 0
+				panic(fmt.Sprintf("argD: 0b%04b\n", nibble))
+			}
+			if high {
+				// decoder must be byte aligned, discard the last nimble before commencing the new line
+				if _, _, ok = nibbles.Next(); !ok {
+					panic("argE")
+				}
+				fmt.Println("aligning")
+			}
+			// new line
+			nbZeroesEncountered = 0
+			fmt.Printf("NEW LINE (%d pixels)\n", nbPixels)
+			nbPixels = 0
+			nbLines++
+		default:
+			panic("argF")
+		}
+	}
+	_, height := coordinates.Get().Size()
+	fmt.Printf("%d lines (height: %d)\n", nbLines, height)
 	return
 }
 
@@ -186,13 +260,39 @@ type Coordinate struct {
 	X, Y int
 }
 
-func (coord SubtitleCoordinates) Size() (width, length int) {
+func (coord SubtitleCoordinates) Size() (width, height int) {
 	return coord.Point2.X - coord.Point1.X + 1, coord.Point2.Y - coord.Point1.Y + 1
 }
 
 /*
 	Extract helpers
 */
+
+type nibbleIterator struct {
+	data []byte
+	// instructions for next read
+	index   int
+	readLow bool
+}
+
+func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
+	if ni.index >= len(ni.data) {
+		return
+	}
+	ok = true
+	if !ni.readLow {
+		// First read at index
+		high = true
+		nibble = (ni.data[ni.index] & 0b11110000) >> 4
+	} else {
+		// Second read at index
+		high = false
+		nibble = (ni.data[ni.index] & 0b00001111)
+		ni.index++
+	}
+	ni.readLow = !ni.readLow
+	return
+}
 
 func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 	// Read the size first
