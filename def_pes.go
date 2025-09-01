@@ -14,6 +14,16 @@ type PESPacket struct {
 	Payload []byte
 }
 
+// ExtractSubtitle extract the raw subtitle contained in the PES packet if the pes packet contains a subtitle packet (private stream 1)
+func (pesp PESPacket) ExtractSubtitle() (subtitle SubtitleRAW, err error) {
+	// Check if the packet is a subtitle packet
+	if pesp.Header.MPH.StreamID() != StreamIDPrivateStream1 {
+		err = fmt.Errorf("the packet stream ID (%s) does not match the expected private stream 1", pesp.Header.MPH.StreamID())
+		return
+	}
+	return extractRAWSubtitle(pesp)
+}
+
 // PESHeader represents the headers and associated data of aPacketized Elementary Stream header.
 // More infos on https://dvd.sourceforge.net/dvdinfo/pes-hdr.html
 type PESHeader struct {

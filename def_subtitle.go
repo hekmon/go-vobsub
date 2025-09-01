@@ -43,12 +43,7 @@ func (cs *ControlSequence) GetDelay() time.Duration {
 	return time.Duration(int(cs.Date[0])<<8|int(cs.Date[1])) * (time.Second / 100)
 }
 
-func ExtractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
-	// Check if the packet is a subtitle packet
-	if packet.Header.MPH.StreamID() != StreamIDPrivateStream1 {
-		err = fmt.Errorf("the packet stream ID (%s) does not match the expected private stream 1", packet.Header.MPH.StreamID())
-		return
-	}
+func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 	// Read the size first
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
@@ -75,24 +70,25 @@ func ExtractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 func parseCTRLSeqs(sequences []byte, baseOffset int) (ctrlSeqs []ControlSequence, err error) {
 	ctrlSeqs = make([]ControlSequence, 0, 2) // most of the date a subtitle will have 2 ctrl sequences: the first with coordinates, palette, etc... and the second with the stop date
 	nbSeqs := 0
-	index := 0
+	nextStart := 0
 	nextOffset := 0
-	lastIndex := 0
+	read := 0
 	var ctrlSeq ControlSequence
 	for {
 		nbSeqs++
-		if ctrlSeq, nextOffset, lastIndex, err = parseCTRLSeq(sequences, index); err != nil {
+		if ctrlSeq, nextOffset, read, err = parseCTRLSeq(sequences[nextStart:]); err != nil {
 			err = fmt.Errorf("failed to parse control seq #%d: %w", nbSeqs, err)
 			return
 		}
 		ctrlSeqs = append(ctrlSeqs, ctrlSeq)
-		if (nextOffset - baseOffset) == index {
-			// next offset is us, meaning we are the last control seq
+		if (nextOffset - baseOffset) == nextStart {
+			// next offset is ourself, meaning we are the last control seq
+			nextStart += read
 			break
 		}
-		index = nextOffset - baseOffset
+		nextStart = nextOffset - baseOffset
 	}
-	for i := lastIndex; i < len(sequences); i++ {
+	for i := nextStart; i < len(sequences); i++ {
 		if sequences[i] != 0xff {
 			err = errors.New("control sequences post commands bytes are not padding")
 			return
@@ -101,24 +97,22 @@ func parseCTRLSeqs(sequences []byte, baseOffset int) (ctrlSeqs []ControlSequence
 	return
 }
 
-func parseCTRLSeq(sequences []byte, index int) (cs ControlSequence, nextOffset, lastIndex int, err error) {
-	if index+4 > len(sequences) {
-		err = fmt.Errorf("can not parse sequence: current index is %d and sequences length is %d: need at least 4 bytes to read date and next offset",
+func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, err error) {
+	if len(sequences) < 4 {
+		err = fmt.Errorf("can not parse sequence: current index is %d and sequence length is %d: need at least 4 bytes to read date and next offset",
 			index, len(sequences),
 		)
 		return
 	}
 	// Extract date
 	cs.Date = [subtitleCTRLSeqDateLen]byte{
-		sequences[index+0],
-		sequences[index+1],
+		sequences[0],
+		sequences[1],
 	}
-	index += subtitleCTRLSeqDateLen
 	// Extract next sequence offset
-	nextOffset = int(sequences[index+0])<<8 | int(sequences[index+1])
-	index += 2
+	nextOffset = int(sequences[2])<<8 | int(sequences[3])
 	// Read commands
-commands:
+	index = 4
 	for {
 		if index >= len(sequences) {
 			err = fmt.Errorf("can not read sequence command: index is %d and sequences length is %d: need at least one byte to read the command",
@@ -184,11 +178,10 @@ commands:
 			}
 			index += subtitleCTRLSeqCmdRLEOffsetsArgsLen
 		case subtitleCTRLSeqCmdEnd:
-			break commands
+			return
 		default:
 			err = fmt.Errorf("unknown command: 0x%02x", cmd)
+			return
 		}
 	}
-	lastIndex = index
-	return
 }
