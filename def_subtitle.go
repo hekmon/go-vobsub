@@ -64,8 +64,8 @@ func (cs ControlSequence) GetAlphaChannels() (color1, color2, color3, color4 uin
 	return
 }
 
-// GetCoordinates returns the coordinates of the subtitle on the screen : x1, x2, y1, y2
-func (cs ControlSequence) GetCoordinates() (coord SubtitleCoordinate) {
+// GetCoordinates returns the coordinates of the subtitle canvea on the screen : x1, x2, y1, y2
+func (cs ControlSequence) GetCoordinates() (coord SubtitleCoordinates) {
 	if cs.Coordinates == nil {
 		return
 	}
@@ -144,14 +144,14 @@ func (cs ControlSequence) String() string {
 }
 
 // PaletteColorID contains the ID of a color in the palette. It is used to select the color for the subtitle text.
-type PaletteColorID int
+type PaletteColorID uint8
 
-type SubtitleCoordinate struct {
+type SubtitleCoordinates struct {
 	X1, X2 int
 	Y1, Y2 int
 }
 
-func (coord SubtitleCoordinate) Size() (width, length int) {
+func (coord SubtitleCoordinates) Size() (width, length int) {
 	return coord.X2 - coord.X1 + 1, coord.Y2 - coord.Y1 + 1
 }
 
