@@ -28,14 +28,17 @@ func ReadVobSub(subFile string) (err error) {
 		}
 	}
 	// Handle retained subtitles
+	var subtitle SubtitleRAW
 	for index, subPkt := range subtitlesPackets {
 		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Start: %s Payload: %d\n",
 			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		)
-		_, err = subPkt.ExtractSubtitle()
-		if err != nil {
+		if subtitle, err = subPkt.ExtractSubtitle(); err != nil {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
 			return
+		}
+		for _, ctrlSequence := range subtitle.ControlSequences {
+			fmt.Printf("\t%s\n", ctrlSequence)
 		}
 	}
 	return

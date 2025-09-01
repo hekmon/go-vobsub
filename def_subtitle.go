@@ -3,6 +3,7 @@ package vobsub
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -23,7 +24,7 @@ const (
 )
 
 type SubtitleRAW struct {
-	data             []byte
+	Data             []byte
 	ControlSequences []ControlSequence
 }
 
@@ -39,9 +40,95 @@ type ControlSequence struct {
 }
 
 // GetDelay convert the control sequence date to the actual delay it represents
-func (cs *ControlSequence) GetDelay() time.Duration {
+func (cs ControlSequence) GetDelay() time.Duration {
 	return time.Duration(int(cs.Date[0])<<8|int(cs.Date[1])) * (time.Second / 100)
 }
+
+// PaletteColorID contains the ID of a color in the palette. It is used to select the color for the subtitle text.
+type PaletteColorID int
+
+// GetPalette returns the palette IDs that are used by the 4 subtitle colors
+func (cs ControlSequence) GetPalette() (color1, color2, color3, color4 PaletteColorID) {
+	if cs.Palette == nil {
+		return
+	}
+	color1 = PaletteColorID(cs.Palette[0] & 0b11110000 >> 4)
+	color2 = PaletteColorID(cs.Palette[0] & 0b00001111)
+	color3 = PaletteColorID(cs.Palette[1] & 0b11110000 >> 4)
+	color4 = PaletteColorID(cs.Palette[1] & 0b00001111)
+	return
+}
+
+type SubtitleCoordinate struct {
+	X1, X2 int
+	Y1, Y2 int
+}
+
+func (coord SubtitleCoordinate) Size() (width, length int) {
+	return coord.X2 - coord.X1 + 1, coord.Y2 - coord.Y1 + 1
+}
+
+// GetCoordinates returns the coordinates of the subtitle on the screen : x1, x2, y1, y2
+func (cs ControlSequence) GetCoordinates() (coord SubtitleCoordinate) {
+	if cs.Coordinates == nil {
+		return
+	}
+	coord.X1 = int(cs.Coordinates[0])<<4 | int(cs.Coordinates[1]&0b11110000)>>4
+	coord.X2 = int(cs.Coordinates[1]&0b00001111)<<8 | int(cs.Coordinates[2])
+	coord.Y1 = int(cs.Coordinates[3])<<4 | int(cs.Coordinates[4]&0b11110000)>>4
+	coord.Y2 = int(cs.Coordinates[4]&0b00001111)<<8 | int(cs.Coordinates[5])
+	return
+}
+
+func (cs ControlSequence) String() string {
+	var builder strings.Builder
+	builder.WriteString(fmt.Sprintf("Delay: %s", cs.GetDelay()))
+	// Force Displaying
+	if cs.ForceDisplaying {
+		builder.WriteString(" | Force Displaying")
+	}
+	// Start Date
+	if cs.StartDate {
+		builder.WriteString(" | StartDate")
+	}
+	// Stop Date
+	if cs.StopDate {
+		builder.WriteString(" | StopDate")
+	}
+	// Palette
+	if cs.Palette != nil {
+		c1, c2, c3, c4 := cs.GetPalette()
+		builder.WriteString(
+			fmt.Sprintf(" | Palette: color1(%d) color2(%d) color3(%d) color4(%d)",
+				c1, c2, c3, c4,
+			),
+		)
+	}
+	// AlphaChannel
+	//// TODO
+	// Coordinates
+	if cs.Coordinates != nil {
+		coord := cs.GetCoordinates()
+		builder.WriteString(
+			fmt.Sprintf(" | Coordinates: x1(%d) x2(%d) y1(%d) y2(%d)",
+				coord.X1, coord.X2, coord.Y1, coord.Y2,
+			),
+		)
+		width, length := coord.Size()
+		builder.WriteString(
+			fmt.Sprintf(" size(%dx%d)",
+				width, length,
+			),
+		)
+	} else {
+		builder.WriteString("None")
+	}
+	return builder.String()
+}
+
+/*
+	Extract helpers
+*/
 
 func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 	// Read the size first
@@ -59,7 +146,7 @@ func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 		return
 	}
 	// Handle subtitle data and control sequences
-	subtitle.data = packet.Payload[4:dataSize]
+	subtitle.Data = packet.Payload[4:dataSize]
 	if subtitle.ControlSequences, err = parseCTRLSeqs(packet.Payload[dataSize:], dataSize); err != nil {
 		err = fmt.Errorf("failed to parse control sequences: %w", err)
 		return
