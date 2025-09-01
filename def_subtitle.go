@@ -7,15 +7,18 @@ import (
 )
 
 const (
-	subtitleCTRLSeqCmdForceDisplaying = 0x00
-	subtitleCTRLSeqCmdStartDate       = 0x01
-	subtitleCTRLSeqCmdStopDate        = 0x02
-	subtitleCTRLSeqCmdPalette         = 0x03
-	subtitleCTRLSeqCmdPaletteArgsLen  = 2
-	subtitleCTRLSeqCmdAlphaChannel    = 0x04
-	subtitleCTRLSeqCmdCoordinates     = 0x05
-	subtitleCTRLSeqCmdRLEOffsets      = 0x06
-	subtitleCTRLSeqCmdEnd             = 0xff
+	subtitleCTRLSeqCmdForceDisplaying     = 0x00
+	subtitleCTRLSeqCmdStartDate           = 0x01
+	subtitleCTRLSeqCmdStopDate            = 0x02
+	subtitleCTRLSeqCmdPalette             = 0x03
+	subtitleCTRLSeqCmdPaletteArgsLen      = 2
+	subtitleCTRLSeqCmdAlphaChannel        = 0x04
+	subtitleCTRLSeqCmdAlphaChannelArgsLen = 2
+	subtitleCTRLSeqCmdCoordinates         = 0x05
+	subtitleCTRLSeqCmdCoordinatesArgsLen  = 6
+	subtitleCTRLSeqCmdRLEOffsets          = 0x06
+	subtitleCTRLSeqCmdRLEOffsetsArgsLen   = 4
+	subtitleCTRLSeqCmdEnd                 = 0xff
 )
 
 type Subtitle struct {
@@ -126,13 +129,31 @@ commands:
 			index += subtitleCTRLSeqCmdPaletteArgsLen
 		case subtitleCTRLSeqCmdAlphaChannel:
 			fmt.Println("  AlphaChannelCMD")
-			index += 2 // args
+			if index+subtitleCTRLSeqCmdAlphaChannelArgsLen > len(sequences) {
+				err = fmt.Errorf("can not read alpha channel command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
+					index, len(sequences), subtitleCTRLSeqCmdAlphaChannelArgsLen,
+				)
+				return
+			}
+			index += subtitleCTRLSeqCmdAlphaChannelArgsLen
 		case subtitleCTRLSeqCmdCoordinates:
 			fmt.Println("  CmdCoordinatesCMD")
-			index += 6 // args
+			if index+subtitleCTRLSeqCmdCoordinatesArgsLen > len(sequences) {
+				err = fmt.Errorf("can not read coordinates command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
+					index, len(sequences), subtitleCTRLSeqCmdCoordinatesArgsLen,
+				)
+				return
+			}
+			index += subtitleCTRLSeqCmdCoordinatesArgsLen
 		case subtitleCTRLSeqCmdRLEOffsets:
 			fmt.Println("  RLEOffsetsCMD")
-			index += 4 // args
+			if index+subtitleCTRLSeqCmdRLEOffsetsArgsLen > len(sequences) {
+				err = fmt.Errorf("can not read RLE offsets command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
+					index, len(sequences), subtitleCTRLSeqCmdRLEOffsetsArgsLen,
+				)
+				return
+			}
+			index += subtitleCTRLSeqCmdRLEOffsetsArgsLen
 		case subtitleCTRLSeqCmdEnd:
 			fmt.Println("  EndCMD")
 			break commands
