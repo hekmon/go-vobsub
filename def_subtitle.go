@@ -33,8 +33,8 @@ type ControlSequence struct {
 	ForceDisplaying bool
 	StartDate       bool
 	StopDate        bool
-	Palette         *[subtitleCTRLSeqCmdPaletteArgsLen]byte
-	AlphaChannel    *[subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
+	PaletteColors   *[subtitleCTRLSeqCmdPaletteArgsLen]byte
+	AlphaChannels   *[subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
 	Coordinates     *[subtitleCTRLSeqCmdCoordinatesArgsLen]byte
 	RLEOffsets      *[subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
 }
@@ -44,28 +44,24 @@ func (cs ControlSequence) GetDelay() time.Duration {
 	return time.Duration(int(cs.Date[0])<<8|int(cs.Date[1])) * (time.Second / 100)
 }
 
-// PaletteColorID contains the ID of a color in the palette. It is used to select the color for the subtitle text.
-type PaletteColorID int
-
 // GetPalette returns the palette IDs that are used by the 4 subtitle colors
 func (cs ControlSequence) GetPalette() (color1, color2, color3, color4 PaletteColorID) {
-	if cs.Palette == nil {
+	if cs.PaletteColors == nil {
 		return
 	}
-	color1 = PaletteColorID(cs.Palette[0] & 0b11110000 >> 4)
-	color2 = PaletteColorID(cs.Palette[0] & 0b00001111)
-	color3 = PaletteColorID(cs.Palette[1] & 0b11110000 >> 4)
-	color4 = PaletteColorID(cs.Palette[1] & 0b00001111)
+	color1 = PaletteColorID(cs.PaletteColors[0] & 0b11110000 >> 4)
+	color2 = PaletteColorID(cs.PaletteColors[0] & 0b00001111)
+	color3 = PaletteColorID(cs.PaletteColors[1] & 0b11110000 >> 4)
+	color4 = PaletteColorID(cs.PaletteColors[1] & 0b00001111)
 	return
 }
 
-type SubtitleCoordinate struct {
-	X1, X2 int
-	Y1, Y2 int
-}
-
-func (coord SubtitleCoordinate) Size() (width, length int) {
-	return coord.X2 - coord.X1 + 1, coord.Y2 - coord.Y1 + 1
+func (cs ControlSequence) GetAlphaChannels() (color1, color2, color3, color4 uint8) {
+	color1 = uint8(cs.AlphaChannels[0] & 0b11110000 >> 4)
+	color2 = uint8(cs.AlphaChannels[0] & 0b00001111)
+	color3 = uint8(cs.AlphaChannels[1] & 0b11110000 >> 4)
+	color4 = uint8(cs.AlphaChannels[1] & 0b00001111)
+	return
 }
 
 // GetCoordinates returns the coordinates of the subtitle on the screen : x1, x2, y1, y2
@@ -96,7 +92,7 @@ func (cs ControlSequence) String() string {
 		builder.WriteString(" | StopDate")
 	}
 	// Palette
-	if cs.Palette != nil {
+	if cs.PaletteColors != nil {
 		c1, c2, c3, c4 := cs.GetPalette()
 		builder.WriteString(
 			fmt.Sprintf(" | Palette: color1(%d) color2(%d) color3(%d) color4(%d)",
@@ -105,7 +101,14 @@ func (cs ControlSequence) String() string {
 		)
 	}
 	// AlphaChannel
-	//// TODO
+	if cs.AlphaChannels != nil {
+		c1, c2, c3, c4 := cs.GetAlphaChannels()
+		builder.WriteString(
+			fmt.Sprintf(" | AlphaChannels: color1(%d) color2(%d) color3(%d) color4(%d)",
+				c1, c2, c3, c4,
+			),
+		)
+	}
 	// Coordinates
 	if cs.Coordinates != nil {
 		coord := cs.GetCoordinates()
@@ -120,10 +123,20 @@ func (cs ControlSequence) String() string {
 				width, length,
 			),
 		)
-	} else {
-		builder.WriteString("None")
 	}
 	return builder.String()
+}
+
+// PaletteColorID contains the ID of a color in the palette. It is used to select the color for the subtitle text.
+type PaletteColorID int
+
+type SubtitleCoordinate struct {
+	X1, X2 int
+	Y1, Y2 int
+}
+
+func (coord SubtitleCoordinate) Size() (width, length int) {
+	return coord.X2 - coord.X1 + 1, coord.Y2 - coord.Y1 + 1
 }
 
 /*
@@ -223,9 +236,9 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.Palette = new([subtitleCTRLSeqCmdPaletteArgsLen]byte)
+			cs.PaletteColors = new([subtitleCTRLSeqCmdPaletteArgsLen]byte)
 			for i := range subtitleCTRLSeqCmdPaletteArgsLen {
-				cs.Palette[i] = sequences[index+i]
+				cs.PaletteColors[i] = sequences[index+i]
 			}
 			index += subtitleCTRLSeqCmdPaletteArgsLen
 		case subtitleCTRLSeqCmdAlphaChannel:
@@ -235,9 +248,9 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 				)
 				return
 			}
-			cs.AlphaChannel = new([subtitleCTRLSeqCmdAlphaChannelArgsLen]byte)
+			cs.AlphaChannels = new([subtitleCTRLSeqCmdAlphaChannelArgsLen]byte)
 			for i := range subtitleCTRLSeqCmdAlphaChannelArgsLen {
-				cs.AlphaChannel[i] = sequences[index+i]
+				cs.AlphaChannels[i] = sequences[index+i]
 			}
 			index += subtitleCTRLSeqCmdAlphaChannelArgsLen
 		case subtitleCTRLSeqCmdCoordinates:

@@ -30,7 +30,7 @@ func ReadVobSub(subFile string) (err error) {
 	// Handle retained subtitles
 	var subtitle SubtitleRAW
 	for index, subPkt := range subtitlesPackets {
-		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Start: %s Payload: %d\n",
+		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
 			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		)
 		if subtitle, err = subPkt.ExtractSubtitle(); err != nil {
