@@ -7,6 +7,7 @@ import (
 )
 
 const (
+	subtitleCTRLSeqDateLen                = 2
 	subtitleCTRLSeqCmdForceDisplaying     = 0x00
 	subtitleCTRLSeqCmdStartDate           = 0x01
 	subtitleCTRLSeqCmdStopDate            = 0x02
@@ -21,11 +22,33 @@ const (
 	subtitleCTRLSeqCmdEnd                 = 0xff
 )
 
-type Subtitle struct {
-	data []byte
+type SubtitleRAW struct {
+	data             []byte
+	ControlSequences []ControlSequence
 }
 
-func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
+type ControlSequence struct {
+	Date            [subtitleCTRLSeqDateLen]byte
+	ForceDisplaying bool
+	StartDate       bool
+	StopDate        bool
+	Palette         *[subtitleCTRLSeqCmdPaletteArgsLen]byte
+	AlphaChannel    *[subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
+	Coordinates     *[subtitleCTRLSeqCmdCoordinatesArgsLen]byte
+	RLEOffsets      *[subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
+}
+
+// GetDelay convert the control sequence date to the actual delay it represents
+func (cs *ControlSequence) GetDelay() time.Duration {
+	return time.Duration(int(cs.Date[0])<<8|int(cs.Date[1])) * (time.Second / 100)
+}
+
+func ExtractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
+	// Check if the packet is a subtitle packet
+	if packet.Header.MPH.StreamID() != StreamIDPrivateStream1 {
+		err = fmt.Errorf("the packet stream ID (%s) does not match the expected private stream 1", packet.Header.MPH.StreamID())
+		return
+	}
 	// Read the size first
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
@@ -40,40 +63,35 @@ func parseSubtitle(packet PESPacket) (subtitle Subtitle, err error) {
 		err = fmt.Errorf("the read data packet size (%d) is greater than the total packet size (%d)", size, len(packet.Payload))
 		return
 	}
-	// Split
+	// Handle subtitle data and control sequences
 	subtitle.data = packet.Payload[4:dataSize]
-	ctrlseqs := packet.Payload[dataSize:]
-	fmt.Printf("Data len is %d and ctrl seq len is %d\n", len(subtitle.data), len(ctrlseqs))
-	fmt.Printf("Control Sequence: %08b\n", ctrlseqs)
-	// Parse control sequences
-	err = parseCTRLSeqs(ctrlseqs, dataSize)
-	if err != nil {
+	if subtitle.ControlSequences, err = parseCTRLSeqs(packet.Payload[dataSize:], dataSize); err != nil {
 		err = fmt.Errorf("failed to parse control sequences: %w", err)
 		return
 	}
-	// Decode image
-	//// TODO
 	return
 }
 
-func parseCTRLSeqs(sequences []byte, baseOffset int) (err error) {
-	index := 0
+func parseCTRLSeqs(sequences []byte, baseOffset int) (ctrlSeqs []ControlSequence, err error) {
+	ctrlSeqs = make([]ControlSequence, 0, 2) // most of the date a subtitle will have 2 ctrl sequences: the first with coordinates, palette, etc... and the second with the stop date
 	nbSeqs := 0
+	index := 0
 	nextOffset := 0
 	lastIndex := 0
+	var ctrlSeq ControlSequence
 	for {
 		nbSeqs++
-		if nextOffset, lastIndex, err = parseCTRLSeq(sequences, index); err != nil {
+		if ctrlSeq, nextOffset, lastIndex, err = parseCTRLSeq(sequences, index); err != nil {
 			err = fmt.Errorf("failed to parse control seq #%d: %w", nbSeqs, err)
 			return
 		}
+		ctrlSeqs = append(ctrlSeqs, ctrlSeq)
 		if (nextOffset - baseOffset) == index {
 			// next offset is us, meaning we are the last control seq
 			break
 		}
 		index = nextOffset - baseOffset
 	}
-	fmt.Printf("read %d sequences, last index is %d on %d\n", nbSeqs, lastIndex, len(sequences))
 	for i := lastIndex; i < len(sequences); i++ {
 		if sequences[i] != 0xff {
 			err = errors.New("control sequences post commands bytes are not padding")
@@ -83,8 +101,7 @@ func parseCTRLSeqs(sequences []byte, baseOffset int) (err error) {
 	return
 }
 
-func parseCTRLSeq(sequences []byte, index int) (nextOffset, lastIndex int, err error) {
-	fmt.Println("Sequence CTRL")
+func parseCTRLSeq(sequences []byte, index int) (cs ControlSequence, nextOffset, lastIndex int, err error) {
 	if index+4 > len(sequences) {
 		err = fmt.Errorf("can not parse sequence: current index is %d and sequences length is %d: need at least 4 bytes to read date and next offset",
 			index, len(sequences),
@@ -92,14 +109,14 @@ func parseCTRLSeq(sequences []byte, index int) (nextOffset, lastIndex int, err e
 		return
 	}
 	// Extract date
-	date := int(sequences[index+0])<<8 | int(sequences[index+1])
-	index += 2
-	delay := time.Duration(date) * (time.Second / 100)
-	fmt.Println(" Delay is", delay)
+	cs.Date = [subtitleCTRLSeqDateLen]byte{
+		sequences[index+0],
+		sequences[index+1],
+	}
+	index += subtitleCTRLSeqDateLen
 	// Extract next sequence offset
 	nextOffset = int(sequences[index+0])<<8 | int(sequences[index+1])
 	index += 2
-	fmt.Println(" next offset is", nextOffset)
 	// Read commands
 commands:
 	for {
@@ -113,49 +130,60 @@ commands:
 		index++
 		switch cmd {
 		case subtitleCTRLSeqCmdForceDisplaying:
-			fmt.Println("  Force displaying")
+			cs.ForceDisplaying = true
 		case subtitleCTRLSeqCmdStartDate:
-			fmt.Println("  StartDateCMD")
+			cs.StartDate = true
 		case subtitleCTRLSeqCmdStopDate:
-			fmt.Println("  StopDateCMD")
+			cs.StopDate = true
 		case subtitleCTRLSeqCmdPalette:
-			fmt.Println("  PaletteCMD")
 			if index+subtitleCTRLSeqCmdPaletteArgsLen > len(sequences) {
 				err = fmt.Errorf("can not read palette command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
 					index, len(sequences), subtitleCTRLSeqCmdPaletteArgsLen,
 				)
 				return
 			}
+			cs.Palette = new([subtitleCTRLSeqCmdPaletteArgsLen]byte)
+			for i := range subtitleCTRLSeqCmdPaletteArgsLen {
+				cs.Palette[i] = sequences[index+i]
+			}
 			index += subtitleCTRLSeqCmdPaletteArgsLen
 		case subtitleCTRLSeqCmdAlphaChannel:
-			fmt.Println("  AlphaChannelCMD")
 			if index+subtitleCTRLSeqCmdAlphaChannelArgsLen > len(sequences) {
 				err = fmt.Errorf("can not read alpha channel command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
 					index, len(sequences), subtitleCTRLSeqCmdAlphaChannelArgsLen,
 				)
 				return
 			}
+			cs.AlphaChannel = new([subtitleCTRLSeqCmdAlphaChannelArgsLen]byte)
+			for i := range subtitleCTRLSeqCmdAlphaChannelArgsLen {
+				cs.AlphaChannel[i] = sequences[index+i]
+			}
 			index += subtitleCTRLSeqCmdAlphaChannelArgsLen
 		case subtitleCTRLSeqCmdCoordinates:
-			fmt.Println("  CmdCoordinatesCMD")
 			if index+subtitleCTRLSeqCmdCoordinatesArgsLen > len(sequences) {
 				err = fmt.Errorf("can not read coordinates command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
 					index, len(sequences), subtitleCTRLSeqCmdCoordinatesArgsLen,
 				)
 				return
 			}
+			cs.Coordinates = new([subtitleCTRLSeqCmdCoordinatesArgsLen]byte)
+			for i := range subtitleCTRLSeqCmdCoordinatesArgsLen {
+				cs.Coordinates[i] = sequences[index+i]
+			}
 			index += subtitleCTRLSeqCmdCoordinatesArgsLen
 		case subtitleCTRLSeqCmdRLEOffsets:
-			fmt.Println("  RLEOffsetsCMD")
 			if index+subtitleCTRLSeqCmdRLEOffsetsArgsLen > len(sequences) {
 				err = fmt.Errorf("can not read RLE offsets command: index is %d and sequences length is %d: need at least %d bytes to read the command arguments",
 					index, len(sequences), subtitleCTRLSeqCmdRLEOffsetsArgsLen,
 				)
 				return
 			}
+			cs.RLEOffsets = new([subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte)
+			for i := range subtitleCTRLSeqCmdRLEOffsetsArgsLen {
+				cs.RLEOffsets[i] = sequences[index+i]
+			}
 			index += subtitleCTRLSeqCmdRLEOffsetsArgsLen
 		case subtitleCTRLSeqCmdEnd:
-			fmt.Println("  EndCMD")
 			break commands
 		default:
 			err = fmt.Errorf("unknown command: 0x%02x", cmd)

@@ -32,7 +32,7 @@ func ReadVobSub(subFile string) (err error) {
 		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Start: %s Payload: %d\n",
 			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		)
-		_, err = parseSubtitle(subPkt)
+		_, err = ExtractRAWSubtitle(subPkt)
 		if err != nil {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
 			return
