@@ -76,6 +76,15 @@ func (cs ControlSequence) GetCoordinates() (coord SubtitleCoordinate) {
 	return
 }
 
+func (cs ControlSequence) GetRLEOffsets() (firstLineOffset int, secondLineOffset int) {
+	if cs.RLEOffsets == nil {
+		return
+	}
+	firstLineOffset = int(cs.RLEOffsets[0])<<8 | int(cs.RLEOffsets[1])
+	secondLineOffset = int(cs.RLEOffsets[2])<<8 | int(cs.RLEOffsets[3])
+	return
+}
+
 func (cs ControlSequence) String() string {
 	var builder strings.Builder
 	builder.WriteString(fmt.Sprintf("Delay: %s", cs.GetDelay()))
@@ -124,6 +133,13 @@ func (cs ControlSequence) String() string {
 			),
 		)
 	}
+	// RLE Offsets
+	if cs.RLEOffsets != nil {
+		firstLineOffset, secondLineOffset := cs.GetRLEOffsets()
+		builder.WriteString(
+			fmt.Sprintf(" | RLE Offsets: 1st(%d) 2nd(%d)", firstLineOffset, secondLineOffset),
+		)
+	}
 	return builder.String()
 }
 
@@ -168,7 +184,7 @@ func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 }
 
 func parseCTRLSeqs(sequences []byte, baseOffset int) (ctrlSeqs []ControlSequence, err error) {
-	ctrlSeqs = make([]ControlSequence, 0, 2) // most of the date a subtitle will have 2 ctrl sequences: the first with coordinates, palette, etc... and the second with the stop date
+	ctrlSeqs = make([]ControlSequence, 0, 2) // most subtitles will have 2 ctrl sequences: the first with coordinates, palette, etc... and the second with the stop date
 	nbSeqs := 0
 	nextStart := 0
 	nextOffset := 0
