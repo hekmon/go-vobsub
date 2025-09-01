@@ -566,7 +566,6 @@ func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
 		nibble = (ni.data[ni.index] & 0b11110000) >> 4
 	} else {
 		// Second read at index
-		high = false
 		nibble = (ni.data[ni.index] & 0b00001111)
 		ni.index++
 	}
