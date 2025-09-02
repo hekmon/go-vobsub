@@ -162,7 +162,7 @@ func parseIdx(reader io.Reader) (metadata IdxMetadata, err error) {
 		case strings.HasPrefix(line, idxPalettePrefix):
 			value := line[len(idxPalettePrefix):]
 			// Extract hexa codes
-			values := strings.Split(value, ", ")
+			values := strings.Split(strings.ReplaceAll(value, ", ", ","), ",") // both separator seen in the wild
 			if len(values) != idxPaletteLen {
 				err = fmt.Errorf("palette should have 16 colors, currently: %v", values)
 				return
