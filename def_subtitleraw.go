@@ -125,8 +125,8 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 				return
 			}
 		}
+		orderedLines = orderedLines[:subtitleWindowHeight]
 	}
-	orderedLines = orderedLines[:subtitleWindowHeight]
 	// Adjust the palette
 	adjustedPalette := make(color.Palette, len(metadata.Palette))
 	copy(adjustedPalette, metadata.Palette)
