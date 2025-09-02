@@ -195,11 +195,10 @@ type ControlSequenceAlphaChannels [subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
 // GetAlphaChannelRatios return the ratios of the alpha channels used by the 4 colors of the subtitle.
 // 0 means full transparent, 1 means 100% opaque (actually 100% of the maximum opacity defined in the idx file, often 100% itself)
 func (csac ControlSequenceAlphaChannels) GetRatios() (alphas [4]float64) {
-	// TODO: inverted ? alpha4, alpha3, alpha2, alpha1
-	alphas[0] = float64(int(csac[0]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alphas[1] = float64(int(csac[0]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alphas[2] = float64(int(csac[1]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alphas[2] = float64(int(csac[1]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[3] = float64(int(csac[0]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[2] = float64(int(csac[0]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[1] = float64(int(csac[1]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[0] = float64(int(csac[1]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
 	return
 }
 
