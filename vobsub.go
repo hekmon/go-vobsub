@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func Decode(idxFile string) (subtitles []Subtitle, err error) {
+func Decode(idxFile string) (subtitles []Subtitle, skippedBadSub int, err error) {
 	// Verify and prepare files path
 	extension := filepath.Ext(idxFile)
 	if extension != ".idx" {
@@ -51,14 +51,17 @@ func Decode(idxFile string) (subtitles []Subtitle, err error) {
 		stopDelay  time.Duration
 		subImg     image.Image
 	)
-	for index, subPkt := range subtitlesPackets {
+	for _, subPkt := range subtitlesPackets {
 		// fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
 		// 	index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		// )
 		// Extract raw subtitle from packet
 		if rawSub, err = subPkt.ExtractSubtitle(); err != nil {
-			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
-			return
+			// Encountered some bad packets in the wild: discarding them
+			// I compared with Subtitle Edit if there was some missing subitles but no, it seems SE did skip them too
+			err = nil
+			skippedBadSub++
+			continue
 		}
 		// for _, ctrlSequence := range subtitle.ControlSequences {
 		// 	fmt.Printf("\t%s\n", ctrlSequence)

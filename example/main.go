@@ -15,7 +15,7 @@ const (
 )
 
 func main() {
-	subs, err := vobsub.Decode(idxFile)
+	subs, _, err := vobsub.Decode(idxFile)
 	if err != nil {
 		panic(err)
 	}
