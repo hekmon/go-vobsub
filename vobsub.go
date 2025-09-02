@@ -22,7 +22,7 @@ func Decode(idxFile string) (subtitles []Subtitle, err error) {
 		err = fmt.Errorf("failed to read Idx file: %w", err)
 		return
 	}
-	fmt.Printf("Idx metadata: %+v\n", metadata)
+	// fmt.Printf("Idx metadata: %+v\n", metadata)
 	// Parse Sub
 	privateStream1Packets, err := readSubFile(subFile)
 	if err != nil {
@@ -71,8 +71,8 @@ func Decode(idxFile string) (subtitles []Subtitle, err error) {
 		// Create the final subtitle
 		pts = subPkt.Header.Extension.Data.ComputePTS()
 		subtitles = append(subtitles, Subtitle{
-			Start: pts + startDelay,
-			Stop:  pts + stopDelay,
+			Start: pts + metadata.TimeOffset + startDelay,
+			Stop:  pts + metadata.TimeOffset + stopDelay,
 			Image: subImg,
 		})
 	}
