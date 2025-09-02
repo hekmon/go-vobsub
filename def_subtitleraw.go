@@ -77,9 +77,9 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	// Ready to decode
 	coord := coordinates.Get()
 	subtitleWindowWidth, subtitleWindowHeight := coord.Size()
-	fmt.Printf("\tStart delay: %s, Stop delay: %s, X1: %+v X2: %+v (%d), Y1: %+v Y2: %+v (%d)\n",
-		startDelay, stopDelay, coord.Point1.X, coord.Point2.X, subtitleWindowWidth, coord.Point1.Y, coord.Point2.Y, subtitleWindowHeight,
-	)
+	// fmt.Printf("\tStart delay: %s, Stop delay: %s, X1: %+v X2: %+v (%d), Y1: %+v Y2: %+v (%d)\n",
+	// 	startDelay, stopDelay, coord.Point1.X, coord.Point2.X, subtitleWindowWidth, coord.Point1.Y, coord.Point2.Y, subtitleWindowHeight,
+	// )
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
 	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], metadata.Width, metadata.Height)
@@ -102,9 +102,9 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 		return
 	}
 	// Deinterlace
-	fmt.Printf("\t%d lines (%d oddLines, %d evenLines). Max len on odd: %d. Max len on even: %d.\n",
-		len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
-	)
+	// fmt.Printf("\t%d lines (%d oddLines, %d evenLines). Max len on odd: %d. Max len on even: %d.\n",
+	// 	len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
+	// )
 	if len(evenLines) > len(oddLines) {
 		// should not happen, just to be sure
 		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines), len(oddLines))
@@ -127,7 +127,6 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 		}
 	}
 	orderedLines = orderedLines[:subtitleWindowHeight]
-	fmt.Printf("\tFinal lines: %d\n", len(orderedLines))
 	// Adjust the palette
 	colorsIdx := paletteColors.GetIDs()
 	for colorIdx, alphaRatio := range alphaChannels.GetRatios() {
