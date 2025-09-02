@@ -128,11 +128,13 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	}
 	orderedLines = orderedLines[:subtitleWindowHeight]
 	// Adjust the palette
+	adjustedPalette := make(color.Palette, len(metadata.Palette))
+	copy(adjustedPalette, metadata.Palette)
 	colorsIdx := paletteColors.GetIDs()
 	for colorIdx, alphaRatio := range alphaChannels.GetRatios() {
-		r, g, b, a := metadata.Palette[colorsIdx[colorIdx]].RGBA()
+		r, g, b, a := adjustedPalette[colorsIdx[colorIdx]].RGBA()
 		a = uint32(float64(a) * alphaRatio)
-		metadata.Palette[colorsIdx[colorIdx]] = color.RGBA{
+		adjustedPalette[colorsIdx[colorIdx]] = color.RGBA{
 			R: uint8(r),
 			G: uint8(g),
 			B: uint8(b),
@@ -141,18 +143,24 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	}
 	// Create the image
 	rgbaImg := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
-	var x, y int
-	for lineNumber, line := range orderedLines {
-		// Applies offets and define final y
-		y = metadata.Origin.Y + coord.Point1.Y + lineNumber
-		column := 0
-		// Apply pixels on the line
-		for _, rlep := range line {
-			color := metadata.Palette[colorsIdx[rlep.color]]
-			for range rlep.repeat {
-				x = metadata.Origin.X + coord.Point1.X + column
-				rgbaImg.Set(x, y, color)
-				column++
+	var relativeX, absoluteX, absoluteY int
+	for relativeY, line := range orderedLines {
+		absoluteY = metadata.Origin.Y + coord.Point1.Y + relativeY
+		if absoluteY >= metadata.Height {
+			break // origin might have moved the rendering window out of the screen
+		}
+		relativeX = 0
+		for _, pixel := range line {
+			for range pixel.repeat {
+				absoluteX = metadata.Origin.X + coord.Point1.X + relativeX
+				if absoluteX >= metadata.Width {
+					break // origin might have moved the rendering window out of the screen
+				}
+				rgbaImg.Set(
+					absoluteX, absoluteY,
+					adjustedPalette[colorsIdx[pixel.color]],
+				)
+				relativeX++
 			}
 		}
 	}
