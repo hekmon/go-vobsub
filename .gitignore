@@ -26,3 +26,4 @@ go.work.sum
 
 # dev
 /dev/*
+*.png
