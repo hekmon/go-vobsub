@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func Read(idxFile string) (subtitles []Subtitle, err error) {
+func Decode(idxFile string) (subtitles []Subtitle, err error) {
 	// Verify and prepare files path
 	extension := filepath.Ext(idxFile)
 	if extension != ".idx" {
@@ -42,7 +42,7 @@ func Read(idxFile string) (subtitles []Subtitle, err error) {
 			subtitlesPackets[len(subtitlesPackets)-1] = currentSub
 		}
 	}
-	// Convert raw subtitles to final image subtitles
+	// Decode raw subtitles to final subtitles
 	subtitles = make([]Subtitle, 0, len(subtitlesPackets))
 	var (
 		rawSub     SubtitleRAW
@@ -75,6 +75,22 @@ func Read(idxFile string) (subtitles []Subtitle, err error) {
 			Stop:  pts + stopDelay,
 			Image: subImg,
 		})
+	}
+	// Security check: some (rare) subtitles do not have stopDate, resulting in a stopDelay at 0 and so a 0 duration
+	// To fix this we will be using the next subtitle start date and remove 100 milliseconds to compute a stop value
+	// different from the start value allowing the subtitle to be shown
+	for index, sub := range subtitles {
+		if sub.Start == sub.Stop {
+			// fmt.Println("Found a buggy sub !")
+			if index+1 < len(subtitles) {
+				potentialStop := subtitles[index+1].Start - 100*time.Millisecond
+				if potentialStop > sub.Start {
+					sub.Stop = potentialStop
+					subtitles[index] = sub
+					// fmt.Printf("Sub fixed ! Start: %s Stop: %s\n", subtitles[index].Start, subtitles[index].Stop)
+				} // else nothing we can do (it might work with less than 100ms but it won't be readable either way[too fast])
+			} // else nothing we can do here
+		}
 	}
 	return
 }
