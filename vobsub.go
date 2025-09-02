@@ -2,11 +2,13 @@ package vobsub
 
 import (
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
+	"time"
 )
 
-func ReadVobSub(idxFile string) (err error) {
+func Read(idxFile string) (subtitles []Subtitle, err error) {
 	// Verify and prepare files path
 	extension := filepath.Ext(idxFile)
 	if extension != ".idx" {
@@ -40,29 +42,39 @@ func ReadVobSub(idxFile string) (err error) {
 			subtitlesPackets[len(subtitlesPackets)-1] = currentSub
 		}
 	}
-	// Extract raw subtitles from packets
-	rawSubtitles := make([]SubtitleRAW, 0, len(subtitlesPackets))
+	// Convert raw subtitles to final image subtitles
+	subtitles = make([]Subtitle, 0, len(subtitlesPackets))
+	var (
+		rawSub     SubtitleRAW
+		pts        time.Duration
+		startDelay time.Duration
+		stopDelay  time.Duration
+		subImg     image.Image
+	)
 	for index, subPkt := range subtitlesPackets {
 		// fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
 		// 	index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		// )
-		var subtitle SubtitleRAW
-		if subtitle, err = subPkt.ExtractSubtitle(); err != nil {
+		// Extract raw subtitle from packet
+		if rawSub, err = subPkt.ExtractSubtitle(); err != nil {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
 			return
 		}
-		rawSubtitles = append(rawSubtitles, subtitle)
 		// for _, ctrlSequence := range subtitle.ControlSequences {
 		// 	fmt.Printf("\t%s\n", ctrlSequence)
 		// }
-	}
-	// Convert raw subtitles to final image subtitles
-	for _, rawSubtitle := range rawSubtitles {
-		if err = rawSubtitle.Decode(metadata); err != nil {
+		// Generate the image
+		if subImg, startDelay, stopDelay, err = rawSub.Decode(metadata); err != nil {
 			err = fmt.Errorf("failed to decode subtitle: %w", err)
 			return
 		}
-		fmt.Println()
+		// Create the final subtitle
+		pts = subPkt.Header.Extension.Data.ComputePTS()
+		subtitles = append(subtitles, Subtitle{
+			Start: pts + startDelay,
+			Stop:  pts + stopDelay,
+			Image: subImg,
+		})
 	}
 	return
 }

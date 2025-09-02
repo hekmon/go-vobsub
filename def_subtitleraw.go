@@ -31,14 +31,13 @@ type SubtitleRAW struct {
 	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) Decode(metadata IdxMetadata) (err error) {
+func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay, stopDelay time.Duration, err error) {
 	// Consolidate rendering metadata
 	var (
-		startDelay, stopDelay time.Duration
-		paletteColors         *ControlSequencePalette
-		alphaChannels         *ControlSequenceAlphaChannels
-		coordinates           *ControlSequenceCoordinates
-		RLEOffsets            *ControlSequenceRLEOffsets
+		paletteColors *ControlSequencePalette
+		alphaChannels *ControlSequenceAlphaChannels
+		coordinates   *ControlSequenceCoordinates
+		RLEOffsets    *ControlSequenceRLEOffsets
 	)
 	for _, cs := range sr.ControlSequences {
 		if cs.StartDate {
@@ -142,7 +141,7 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (err error) {
 		}
 	}
 	// Create the image
-	img := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
+	rgbaImg := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
 	var x, y int
 	for lineNumber, line := range orderedLines {
 		// Applies offets and define final y
@@ -153,11 +152,13 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (err error) {
 			color := metadata.Palette[colorsIdx[rlep.color]]
 			for range rlep.repeat {
 				x = metadata.Origin.X + coord.Point1.X + column
-				img.Set(x, y, color)
+				rgbaImg.Set(x, y, color)
 				column++
 			}
 		}
 	}
+	// Return as a standard go image
+	img = rgbaImg
 	return
 }
 
