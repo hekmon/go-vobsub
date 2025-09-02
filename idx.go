@@ -164,7 +164,7 @@ func parseIdx(reader io.Reader) (metadata IdxMetadata, err error) {
 			// Extract hexa codes
 			values := strings.Split(strings.ReplaceAll(value, ", ", ","), ",") // both separator seen in the wild
 			if len(values) != idxPaletteLen {
-				err = fmt.Errorf("palette should have 16 colors, currently: %v", values)
+				err = fmt.Errorf("palette should have 16 colors, currently %d: %v", len(values), values)
 				return
 			}
 			// Create the main alpha channel
