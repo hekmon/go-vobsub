@@ -2,7 +2,7 @@
 
 Golang library to extract VobSub subtitles from .sub/.idx files and generate their corresponding images with their associated timestamps.
 
-working. need to finalize doc.
+Work In Progress. Use at your own risk.
 
 
 ## Resources
