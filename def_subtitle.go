@@ -3,7 +3,6 @@ package vobsub
 import (
 	"errors"
 	"fmt"
-	"image/color"
 	"strings"
 	"time"
 )
@@ -30,7 +29,7 @@ type SubtitleRAW struct {
 	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) Convert(palette color.Palette) (err error) {
+func (sr SubtitleRAW) Convert(metadata IdxMetadata) (err error) {
 	// Consolidate rendering metadata
 	var (
 		startDelay, stopDelay time.Duration
@@ -254,10 +253,6 @@ func (cs ControlSequence) String() string {
 
 type SubtitleCoordinates struct {
 	Point1, Point2 Coordinate
-}
-
-type Coordinate struct {
-	X, Y int
 }
 
 func (coord SubtitleCoordinates) Size() (width, height int) {

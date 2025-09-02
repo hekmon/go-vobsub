@@ -3,11 +3,24 @@ package vobsub
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
-func ReadVobSub(subFile string) (err error) {
-	// Parse IDX
-	//// TODO
+func ReadVobSub(idxFile string) (err error) {
+	// Verify and prepare files path
+	extension := filepath.Ext(idxFile)
+	if extension != ".idx" {
+		err = fmt.Errorf("expected .idx file extension: got %q", extension)
+		return
+	}
+	subFile := idxFile[:len(idxFile)-len(extension)] + ".sub"
+	// Parse Idx file to get subtitle metadata
+	metadata, err := readIdxFile(idxFile)
+	if err != nil {
+		err = fmt.Errorf("failed to read Idx file: %w", err)
+		return
+	}
+	fmt.Printf("Idx metadata: %+v\n", metadata)
 	// Parse Sub
 	privateStream1Packets, err := readSubFile(subFile)
 	if err != nil {
@@ -27,20 +40,25 @@ func ReadVobSub(subFile string) (err error) {
 			subtitlesPackets[len(subtitlesPackets)-1] = currentSub
 		}
 	}
-	// Handle retained subtitles
-	var subtitle SubtitleRAW
+	// Extract raw subtitles from packets
+	rawSubtitles := make([]SubtitleRAW, 0, len(subtitlesPackets))
 	for index, subPkt := range subtitlesPackets {
 		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
 			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
 		)
+		var subtitle SubtitleRAW
 		if subtitle, err = subPkt.ExtractSubtitle(); err != nil {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
 			return
 		}
+		rawSubtitles = append(rawSubtitles, subtitle)
 		// for _, ctrlSequence := range subtitle.ControlSequences {
 		// 	fmt.Printf("\t%s\n", ctrlSequence)
 		// }
-		if err = subtitle.Convert(nil); err != nil {
+	}
+	// Convert raw subtitles to final image subtitles
+	for _, rawSubtitle := range rawSubtitles {
+		if err = rawSubtitle.Convert(metadata); err != nil {
 			err = fmt.Errorf("failed to decode subtitle: %w", err)
 			return
 		}
@@ -49,11 +67,27 @@ func ReadVobSub(subFile string) (err error) {
 	return
 }
 
+func readIdxFile(Idxfile string) (metadata IdxMetadata, err error) {
+	// Open the binary sub file
+	fd, err := os.Open(Idxfile)
+	if err != nil {
+		err = fmt.Errorf("failed to open file: %w", err)
+		return
+	}
+	defer fd.Close()
+	// Parse its metadata
+	if metadata, err = parseIdx(fd); err != nil {
+		err = fmt.Errorf("failed to parse Idx metadata file: %w", err)
+		return
+	}
+	return
+}
+
 func readSubFile(subFile string) (privateStream1Packets []PESPacket, err error) {
 	// Open the binary sub file
 	fd, err := os.Open(subFile)
 	if err != nil {
-		err = fmt.Errorf("failed to open subtitle file: %w", err)
+		err = fmt.Errorf("failed to open file: %w", err)
 		return
 	}
 	defer fd.Close()
