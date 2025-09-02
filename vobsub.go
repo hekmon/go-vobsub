@@ -43,9 +43,9 @@ func ReadVobSub(idxFile string) (err error) {
 	// Extract raw subtitles from packets
 	rawSubtitles := make([]SubtitleRAW, 0, len(subtitlesPackets))
 	for index, subPkt := range subtitlesPackets {
-		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
-			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
-		)
+		// fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
+		// 	index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
+		// )
 		var subtitle SubtitleRAW
 		if subtitle, err = subPkt.ExtractSubtitle(); err != nil {
 			err = fmt.Errorf("failed to parse subtitle %d: %w", index, err)
@@ -58,7 +58,7 @@ func ReadVobSub(idxFile string) (err error) {
 	}
 	// Convert raw subtitles to final image subtitles
 	for _, rawSubtitle := range rawSubtitles {
-		if err = rawSubtitle.Convert(metadata); err != nil {
+		if err = rawSubtitle.Decode(metadata); err != nil {
 			err = fmt.Errorf("failed to decode subtitle: %w", err)
 			return
 		}

@@ -3,6 +3,8 @@ package vobsub
 import (
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
 	"strings"
 	"time"
 )
@@ -29,7 +31,7 @@ type SubtitleRAW struct {
 	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) Convert(metadata IdxMetadata) (err error) {
+func (sr SubtitleRAW) Decode(metadata IdxMetadata) (err error) {
 	// Consolidate rendering metadata
 	var (
 		startDelay, stopDelay time.Duration
@@ -81,7 +83,7 @@ func (sr SubtitleRAW) Convert(metadata IdxMetadata) (err error) {
 	)
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
-	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], subtitleWindowWidth, subtitleWindowHeight) // TODO send the max image size instead of the possibly reduce subtitles size as some lines may overflows with reduced window
+	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], metadata.Width, metadata.Height)
 	if err != nil {
 		err = fmt.Errorf("failed to parse RLE odd lines: %w", err)
 		return
@@ -91,7 +93,7 @@ func (sr SubtitleRAW) Convert(metadata IdxMetadata) (err error) {
 		return
 	}
 	//// even lines
-	evenLines, err := parseRLE(sr.Data[secondLineOffset:], subtitleWindowWidth, subtitleWindowHeight)
+	evenLines, err := parseRLE(sr.Data[secondLineOffset:], metadata.Width, metadata.Height)
 	if err != nil {
 		err = fmt.Errorf("failed to parse RLE even lines: %w", err)
 		return
@@ -127,8 +129,35 @@ func (sr SubtitleRAW) Convert(metadata IdxMetadata) (err error) {
 	}
 	orderedLines = orderedLines[:subtitleWindowHeight]
 	fmt.Printf("\tFinal lines: %d\n", len(orderedLines))
+	// Adjust the palette
+	colorsIdx := paletteColors.GetIDs()
+	for colorIdx, alphaRatio := range alphaChannels.GetRatios() {
+		r, g, b, a := metadata.Palette[colorsIdx[colorIdx]].RGBA()
+		a = uint32(float64(a) * alphaRatio)
+		metadata.Palette[colorsIdx[colorIdx]] = color.RGBA{
+			R: uint8(r),
+			G: uint8(g),
+			B: uint8(b),
+			A: uint8(a),
+		}
+	}
 	// Create the image
-	//// TODO (need idx infos first)
+	img := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
+	var x, y int
+	for lineNumber, line := range orderedLines {
+		// Applies offets and define final y
+		y = metadata.Origin.Y + coord.Point1.Y + lineNumber
+		column := 0
+		// Apply pixels on the line
+		for _, rlep := range line {
+			color := metadata.Palette[colorsIdx[rlep.color]]
+			for range rlep.repeat {
+				x = metadata.Origin.X + coord.Point1.X + column
+				img.Set(x, y, color)
+				column++
+			}
+		}
+	}
 	return
 }
 
@@ -153,11 +182,11 @@ func (csd ControlSequenceDate) GetDelay() time.Duration {
 type ControlSequencePalette [subtitleCTRLSeqCmdPaletteArgsLen]byte
 
 // GetPaletteIDs returns the 4 palette IDs colors that are used by the subtitle
-func (csp ControlSequencePalette) GetIDs() (color1, color2, color3, color4 uint8) {
-	color1 = uint8(csp[0] & 0b11110000 >> 4)
-	color2 = uint8(csp[0] & 0b00001111)
-	color3 = uint8(csp[1] & 0b11110000 >> 4)
-	color4 = uint8(csp[1] & 0b00001111)
+func (csp ControlSequencePalette) GetIDs() (colorsIdx [4]uint8) {
+	colorsIdx[0] = uint8(csp[0] & 0b11110000 >> 4)
+	colorsIdx[1] = uint8(csp[0] & 0b00001111)
+	colorsIdx[2] = uint8(csp[1] & 0b11110000 >> 4)
+	colorsIdx[3] = uint8(csp[1] & 0b00001111)
 	return
 }
 
@@ -165,12 +194,12 @@ type ControlSequenceAlphaChannels [subtitleCTRLSeqCmdAlphaChannelArgsLen]byte
 
 // GetAlphaChannelRatios return the ratios of the alpha channels used by the 4 colors of the subtitle.
 // 0 means full transparent, 1 means 100% opaque (actually 100% of the maximum opacity defined in the idx file, often 100% itself)
-func (csac ControlSequenceAlphaChannels) GetRatios() (alpha1, alpha2, alpha3, alpha4 float64) {
+func (csac ControlSequenceAlphaChannels) GetRatios() (alphas [4]float64) {
 	// TODO: inverted ? alpha4, alpha3, alpha2, alpha1
-	alpha1 = float64(int(csac[0]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alpha2 = float64(int(csac[0]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alpha3 = float64(int(csac[1]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
-	alpha4 = float64(int(csac[1]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[0] = float64(int(csac[0]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[1] = float64(int(csac[0]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[2] = float64(int(csac[1]&0b11110000>>4)) * subtitleCTRLSeqCmdAlphaChannelRatio
+	alphas[2] = float64(int(csac[1]&0b00001111)) * subtitleCTRLSeqCmdAlphaChannelRatio
 	return
 }
 
@@ -210,19 +239,19 @@ func (cs ControlSequence) String() string {
 	}
 	// Palette
 	if cs.PaletteColors != nil {
-		c1, c2, c3, c4 := cs.PaletteColors.GetIDs()
+		colors := cs.PaletteColors.GetIDs()
 		builder.WriteString(
 			fmt.Sprintf(" | Palette: color1(%d) color2(%d) color3(%d) color4(%d)",
-				c1, c2, c3, c4,
+				colors[0], colors[1], colors[2], colors[3],
 			),
 		)
 	}
 	// AlphaChannel
 	if cs.AlphaChannels != nil {
-		c1, c2, c3, c4 := cs.AlphaChannels.GetRatios()
+		alphas := cs.AlphaChannels.GetRatios()
 		builder.WriteString(
 			fmt.Sprintf(" | AlphaChannels: color1(%f) color2(%f) color3(%f) color4(%f)",
-				c1, c2, c3, c4,
+				alphas[0], alphas[1], alphas[2], alphas[3],
 			),
 		)
 	}
