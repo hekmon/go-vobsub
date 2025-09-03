@@ -82,7 +82,11 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	// )
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
-	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], subtitleWindowWidth, subtitleWindowHeight/2)
+	var addition int
+	if subtitleWindowHeight%2 != 0 {
+		addition = 1
+	}
+	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], subtitleWindowWidth, (subtitleWindowHeight/2)+addition)
 	if err != nil {
 		err = fmt.Errorf("failed to parse RLE odd lines: %w", err)
 		return
@@ -99,14 +103,17 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	// )
 	if len(evenLines.lines) > len(oddLines.lines) {
 		// should not happen, just to be sure
-		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines.lines), len(oddLines.lines))
-		return
+		// err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines.lines), len(oddLines.lines))
+		// return
+		fmt.Printf("Warning: more even lines (%d) than odd lines (%d)\n", len(evenLines.lines), len(oddLines.lines))
 	}
 	orderedLines := rleLines{
 		lines: make([]rleLine, 0, len(oddLines.lines)+len(evenLines.lines)),
 	}
-	for i := range oddLines.lines {
-		orderedLines.lines = append(orderedLines.lines, oddLines.lines[i])
+	for i := range max(len(oddLines.lines), len(evenLines.lines)) {
+		if i < len(oddLines.lines) {
+			orderedLines.lines = append(orderedLines.lines, oddLines.lines[i])
+		}
 		if i < len(evenLines.lines) {
 			orderedLines.lines = append(orderedLines.lines, evenLines.lines[i])
 		}
@@ -503,28 +510,31 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 		case 2:
 			// the only letter of the alphabet with 2 leading 0 is a line carriage 0x000*
 			// so the current nibbles should be the third 0
-			if nibble != 0 {
-				err = fmt.Errorf("unexpected nibble 0x%x (point G)", nibble)
-				return
-			}
-			// nbZeroesEncountered++ // unecessary
-			// discard the 4th nibble (should be 0 as well, but others values as been seen in the wild (see spu_notes))
-			var high bool
-			if _, high, ok = nibbles.Next(); !ok {
-				err = errors.New("unexpected end (point H)")
-				return
-			}
-			// Realign if necessary
-			if high {
-				// decoder must be byte aligned, discard the last nimble before commencing the new line
-				if _, _, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point I)")
+			if nibble == 0 {
+				// discard the 4th nibble (should be 0 as well, but others values as been seen in the wild (see spu_notes))
+				var high bool
+				if _, high, ok = nibbles.Next(); !ok {
+					err = errors.New("unexpected end (point H)")
 					return
 				}
-				// fmt.Prinln("aligning")
+				// Realign if necessary
+				if high {
+					// decoder must be byte aligned, discard the last nimble before commencing the new line
+					if _, _, ok = nibbles.Next(); !ok {
+						err = errors.New("unexpected end (point I)")
+						return
+					}
+					fmt.Println("aligning")
+				}
+				lines.NextLine()
+				nbZeroesEncountered = 0
+			} else {
+				fmt.Println("WEIRD")
+				// Let's ignore one previous zero
+				nbZeroesEncountered = 1 // that's seems to fix the issue :O
+				// and restart the handling of this non zero nibble
+				nibbles.StepBack()
 			}
-			lines.NextLine()
-			nbZeroesEncountered = 0
 		default:
 			err = fmt.Errorf("unexpected number of zeroes (point J): %d", nbZeroesEncountered)
 			return
@@ -556,6 +566,15 @@ func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
 	}
 	ni.readLow = !ni.readLow
 	return
+}
+
+func (ni *nibbleIterator) StepBack() {
+	if ni.readLow {
+		ni.readLow = false
+	} else if ni.index > 0 {
+		ni.readLow = true
+		ni.index--
+	}
 }
 
 type rleLines struct {
@@ -592,6 +611,7 @@ func (rls *rleLines) NextLine() bool {
 		rls.lines = make([]rleLine, 1, rls.maxLines)
 		rls.lines[0] = make(rleLine, 0)
 	} else if len(rls.lines) >= rls.maxLines {
+		fmt.Println("discarding line")
 		return false
 	}
 	rls.lines = append(rls.lines, make(rleLine, 0, rls.maxPixelsPerLine))

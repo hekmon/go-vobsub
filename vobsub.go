@@ -51,10 +51,10 @@ func Decode(idxFile string) (subtitles []Subtitle, skippedBadSub int, err error)
 		stopDelay  time.Duration
 		subImg     image.Image
 	)
-	for _, subPkt := range subtitlesPackets {
-		// fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
-		// 	index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
-		// )
+	for index, subPkt := range subtitlesPackets {
+		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
+			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
+		)
 		// Extract raw subtitle from packet
 		if rawSub, err = subPkt.ExtractSubtitle(); err != nil {
 			// Encountered some bad packets in the wild: discarding them
