@@ -82,50 +82,34 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	// )
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
-	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], metadata.Width, metadata.Height)
+	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], subtitleWindowWidth, subtitleWindowHeight/2)
 	if err != nil {
 		err = fmt.Errorf("failed to parse RLE odd lines: %w", err)
 		return
 	}
-	if oddLines.MaxLinePixels() > subtitleWindowWidth {
-		err = fmt.Errorf("odd lines max line pixels (%d) is greater than subtitle window width (%d)", oddLines.MaxLinePixels(), subtitleWindowWidth)
-		return
-	}
 	//// even lines
-	evenLines, err := parseRLE(sr.Data[secondLineOffset:], metadata.Width, metadata.Height)
+	evenLines, err := parseRLE(sr.Data[secondLineOffset:], subtitleWindowWidth, subtitleWindowHeight/2)
 	if err != nil {
 		err = fmt.Errorf("failed to parse RLE even lines: %w", err)
-		return
-	}
-	if evenLines.MaxLinePixels() > subtitleWindowWidth {
-		err = fmt.Errorf("even lines max line pixels (%d) is greater than subtitle window width (%d)", evenLines.MaxLinePixels(), subtitleWindowWidth)
 		return
 	}
 	// Deinterlace
 	// fmt.Printf("\t%d lines (%d oddLines, %d evenLines). Max len on odd: %d. Max len on even: %d.\n",
 	// 	len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
 	// )
-	if len(evenLines) > len(oddLines) {
+	if len(evenLines.lines) > len(oddLines.lines) {
 		// should not happen, just to be sure
-		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines), len(oddLines))
+		err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines.lines), len(oddLines.lines))
 		return
 	}
-	orderedLines := make(rleLines, 0, len(oddLines)+len(evenLines))
-	for i := range oddLines {
-		orderedLines = append(orderedLines, oddLines[i])
-		if i < len(evenLines) {
-			orderedLines = append(orderedLines, evenLines[i])
-		}
+	orderedLines := rleLines{
+		lines: make([]rleLine, 0, len(oddLines.lines)+len(evenLines.lines)),
 	}
-	// Remove overflowing lines
-	if len(orderedLines) > subtitleWindowHeight {
-		for _, line := range orderedLines[subtitleWindowHeight:] {
-			if len(line) != 0 {
-				err = fmt.Errorf("not removing non empty overflow line: %+v\n", line)
-				return
-			}
+	for i := range oddLines.lines {
+		orderedLines.lines = append(orderedLines.lines, oddLines.lines[i])
+		if i < len(evenLines.lines) {
+			orderedLines.lines = append(orderedLines.lines, evenLines.lines[i])
 		}
-		orderedLines = orderedLines[:subtitleWindowHeight]
 	}
 	// Adjust the palette
 	adjustedPalette := make(color.Palette, len(metadata.Palette))
@@ -143,25 +127,21 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	}
 	// Create the image
 	rgbaImg := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
-	var relativeX, absoluteX, absoluteY int
-	for relativeY, line := range orderedLines {
+	var absoluteX, absoluteY int
+	for relativeY, line := range orderedLines.lines {
 		absoluteY = metadata.Origin.Y + coord.Point1.Y + relativeY
 		if absoluteY >= metadata.Height {
 			break // origin might have moved the rendering window out of the screen
 		}
-		relativeX = 0
-		for _, pixel := range line {
-			for range pixel.repeat {
-				absoluteX = metadata.Origin.X + coord.Point1.X + relativeX
-				if absoluteX >= metadata.Width {
-					break // origin might have moved the rendering window out of the screen
-				}
-				rgbaImg.Set(
-					absoluteX, absoluteY,
-					adjustedPalette[colorsIdx[pixel.color]],
-				)
-				relativeX++
+		for relativeX, pixel := range line {
+			absoluteX = metadata.Origin.X + coord.Point1.X + relativeX
+			if absoluteX >= metadata.Width {
+				break // origin might have moved the rendering window out of the screen
 			}
+			rgbaImg.Set(
+				absoluteX, absoluteY,
+				adjustedPalette[colorsIdx[pixel]],
+			)
 		}
 	}
 	// Return as a standard go image
@@ -442,35 +422,11 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 	}
 }
 
-type rleLines []rleLine
-
-func (rl rleLines) MaxLinePixels() (max int) {
-	for _, line := range rl {
-		nbPixels := line.Len()
-		if nbPixels > max {
-			max = nbPixels
-		}
-	}
-	return
-}
-
-type rleLine []rlePixel
-
-func (rl rleLine) Len() (length int) {
-	for _, pixel := range rl {
-		length += int(pixel.repeat)
-	}
-	return
-}
-
-type rlePixel struct {
-	color  uint8 // only 4 values are used: 0x00, 0x01, 0x02, 0x03
-	repeat uint8
-}
-
 func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err error) {
-	lines = make(rleLines, 0, maxLines)
-	line := make(rleLine, 0, maxPixelsPerLine)
+	lines = rleLines{
+		maxPixelsPerLine: maxPixelsPerLine,
+		maxLines:         maxLines,
+	}
 	nibbles := nibbleIterator{data: data}
 	nbZeroesEncountered := 0
 	for nibble, _, ok := nibbles.Next(); ok; nibble, _, ok = nibbles.Next() {
@@ -478,7 +434,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 		case 0:
 			switch nibble {
 			case 0xf, 0xe, 0xd, 0xc, 0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4:
-				line = append(line, rlePixel{
+				lines.AddPixel(rlePixel{
 					color:  nibble & 0b00000011,
 					repeat: nibble >> 2,
 				})
@@ -492,7 +448,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 				}
 				value |= nibble
 				// save
-				line = append(line, rlePixel{
+				lines.AddPixel(rlePixel{
 					color:  value & 0b00000011,
 					repeat: value >> 2,
 				})
@@ -514,7 +470,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 				}
 				value |= nibble
 				// save
-				line = append(line, rlePixel{
+				lines.AddPixel(rlePixel{
 					color:  value & 0b00000011,
 					repeat: value >> 2,
 				})
@@ -533,7 +489,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 				}
 				value |= uint16(nibble)
 				// save
-				line = append(line, rlePixel{
+				lines.AddPixel(rlePixel{
 					color:  uint8(value & 0b0000000000000011),
 					repeat: uint8(value >> 2), // value max is 0x03FF == 0b00000011 0b11111111, and once shifted >> 2 it fits into uint8 and so it can be casted without overflow
 				})
@@ -567,9 +523,7 @@ func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err 
 				}
 				// fmt.Prinln("aligning")
 			}
-			// new line
-			lines = append(lines, line)
-			line = make(rleLine, 0, maxPixelsPerLine)
+			lines.NextLine()
 			nbZeroesEncountered = 0
 		default:
 			err = fmt.Errorf("unexpected number of zeroes (point J): %d", nbZeroesEncountered)
@@ -602,4 +556,51 @@ func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
 	}
 	ni.readLow = !ni.readLow
 	return
+}
+
+type rleLines struct {
+	maxPixelsPerLine int
+	maxLines         int
+	lines            []rleLine
+}
+
+func (rls *rleLines) AddPixel(pixel rlePixel) {
+	if len(rls.lines) == 0 {
+		rls.lines = make([]rleLine, 1, rls.maxLines)
+		rls.lines[0] = make(rleLine, 0, rls.maxPixelsPerLine)
+	}
+	currentLine := rls.lines[len(rls.lines)-1]
+	remainingPixelsOnLine := cap(currentLine) - len(currentLine)
+	for range pixel.repeat {
+		if remainingPixelsOnLine == 0 {
+			rls.lines[len(rls.lines)-1] = currentLine
+			if !rls.NextLine() {
+				fmt.Printf("discarding pixel: 0b%02b\n", pixel.color)
+				return
+			}
+			currentLine = rls.lines[len(rls.lines)-1]
+			remainingPixelsOnLine = rls.maxPixelsPerLine
+		}
+		currentLine = append(currentLine, pixel.color)
+		remainingPixelsOnLine--
+	}
+	rls.lines[len(rls.lines)-1] = currentLine
+}
+
+func (rls *rleLines) NextLine() bool {
+	if len(rls.lines) == 0 {
+		rls.lines = make([]rleLine, 1, rls.maxLines)
+		rls.lines[0] = make(rleLine, 0)
+	} else if len(rls.lines) >= rls.maxLines {
+		return false
+	}
+	rls.lines = append(rls.lines, make(rleLine, 0, rls.maxPixelsPerLine))
+	return true
+}
+
+type rleLine []uint8
+
+type rlePixel struct {
+	color  uint8 // only 4 values are used: 0x00, 0x01, 0x02, 0x03
+	repeat uint8
 }
