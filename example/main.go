@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	// you must pass the .idx file but the .sub file must be present too !
-	idxFile = "/path/to/you/subtitle.idx"
+	// you must pass the .sub file but the .idx file must be present too !
+	subFile = "/path/to/you/subtitle.sub"
 )
 
 func main() {
 	fullSizeImages := true
-	subs, skipped, err := vobsub.Decode(idxFile, fullSizeImages)
+	subs, skipped, err := vobsub.Decode(subFile, fullSizeImages)
 	if err != nil {
 		panic(err)
 	}

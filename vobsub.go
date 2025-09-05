@@ -8,14 +8,14 @@ import (
 	"time"
 )
 
-func Decode(idxFile string, fullSizeImages bool) (subtitles []Subtitle, skippedBadSub int, err error) {
+func Decode(subFile string, fullSizeImages bool) (subtitles []Subtitle, skippedBadSub int, err error) {
 	// Verify and prepare files path
-	extension := filepath.Ext(idxFile)
-	if extension != ".idx" {
-		err = fmt.Errorf("expected .idx file extension: got %q", extension)
+	extension := filepath.Ext(subFile)
+	if extension != ".sub" {
+		err = fmt.Errorf("expected .sub file extension: got %q", extension)
 		return
 	}
-	subFile := idxFile[:len(idxFile)-len(extension)] + ".sub"
+	idxFile := subFile[:len(subFile)-len(extension)] + ".idx"
 	// Parse Idx file to get subtitle metadata
 	metadata, err := readIdxFile(idxFile)
 	if err != nil {
