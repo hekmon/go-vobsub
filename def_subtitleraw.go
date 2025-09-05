@@ -97,7 +97,7 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	rgbaImg := image.NewRGBA(image.Rect(coord.Point1.X, coord.Point1.Y, coord.Point2.X, coord.Point2.Y))
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
-	iter := nibbleIterator{
+	iter := &nibbleIterator{
 		data: sr.Data[firstLineOffset:secondLineOffset],
 	}
 	if err = drawOddOrEvenLines(rgbaImg, palette, iter, false); err != nil {
@@ -105,7 +105,7 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 		return
 	}
 	//// even lines
-	iter = nibbleIterator{
+	iter = &nibbleIterator{
 		data: sr.Data[secondLineOffset:],
 	}
 	if err = drawOddOrEvenLines(rgbaImg, palette, iter, true); err != nil {
@@ -390,9 +390,8 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 	}
 }
 
-func drawOddOrEvenLines(rgbaImg *image.RGBA, palette color.Palette, iter nibbleIterator, evenLines bool) (err error) {
+func drawOddOrEvenLines(rgbaImg *image.RGBA, palette color.Palette, iter *nibbleIterator, evenLines bool) (err error) {
 	bounds := rgbaImg.Bounds()
-	fmt.Println(bounds)
 	var (
 		relativeX, relativeY int
 		absoluteX, absoluteY int
@@ -402,40 +401,36 @@ func drawOddOrEvenLines(rgbaImg *image.RGBA, palette color.Palette, iter nibbleI
 	if evenLines {
 		relativeY = 1
 	}
+	absoluteY = bounds.Min.Y + relativeY
 	for !iter.Ended() {
-		if pixel, err = parseRLE(&iter); err != nil {
+		if pixel, err = decodeRLE(iter); err != nil {
 			return
 		}
-		absoluteY = bounds.Min.Y + relativeY
-		if absoluteY > bounds.Max.Y {
-			return // origin might have moved the rendering window out of the screen
-		}
-		length = int(pixel.repeat)
-		if length == 0 {
+		if length = int(pixel.repeat); length == 0 {
 			// going until the end of line
 			length = bounds.Max.X - (bounds.Min.X + relativeX) + 1
 		}
 		for range length {
 			absoluteX = bounds.Min.X + relativeX
-			if absoluteX > bounds.Max.X {
-				fmt.Println("stepping out !")
-				relativeX = 0
-				absoluteX = bounds.Min.X + relativeX
-				relativeY += 2
-				// break
-			}
 			rgbaImg.Set(absoluteX, absoluteY, palette[pixel.color])
+			if absoluteX == bounds.Max.X {
+				// Need a new line for next pixel
+				relativeX = 0
+				relativeY += 2
+				absoluteY = bounds.Min.Y + relativeY
+				if absoluteY > bounds.Max.Y {
+					return
+				}
+				iter.Align() // align decoder if needed for new line
+				break        // discard any repetition remaining (cause we reached the end of the line)
+			}
 			relativeX++
-		}
-		if pixel.repeat == 0 {
-			relativeX = 0
-			relativeY += 2
 		}
 	}
 	return
 }
 
-func parseRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
+func decodeRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 	// 1 nibble letters:  rrcc
 	// 2 nibbles letters: 00rr rrcc
 	// 3 nibbles letters: 0000 rrrr rrcc
@@ -486,10 +481,7 @@ func parseRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 		}
 		return
 	}
-	if p.repeat = secondNibble<<6 | thirdNibble<<2 | (fourthNibble&0b1100)>>2; p.repeat == 0 {
-		// carriage return, align iterator for next read
-		nibbles.Align()
-	}
+	p.repeat = secondNibble<<6 | thirdNibble<<2 | (fourthNibble&0b1100)>>2
 	p.color = fourthNibble & 0b0011
 	return
 }
