@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func Decode(idxFile string) (subtitles []Subtitle, skippedBadSub int, err error) {
+func Decode(idxFile string, fullSizeImages bool) (subtitles []Subtitle, skippedBadSub int, err error) {
 	// Verify and prepare files path
 	extension := filepath.Ext(idxFile)
 	if extension != ".idx" {
@@ -51,14 +51,14 @@ func Decode(idxFile string) (subtitles []Subtitle, skippedBadSub int, err error)
 		stopDelay  time.Duration
 		subImg     image.Image
 	)
-	for index, subPkt := range subtitlesPackets {
-		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
-			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
-		)
+	for _, subPkt := range subtitlesPackets {
+		// fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
+		// 	index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
+		// )
 		// Extract raw subtitle from packet
 		if rawSub, err = subPkt.ExtractSubtitle(); err != nil {
 			// Encountered some bad packets in the wild: discarding them
-			// I compared with Subtitle Edit if there was some missing subitles but no, it seems SE did skip them too
+			// I compared with Subtitle Edit nothing was missing, it seems SE did skip them too
 			err = nil
 			skippedBadSub++
 			continue
@@ -67,21 +67,21 @@ func Decode(idxFile string) (subtitles []Subtitle, skippedBadSub int, err error)
 		// 	fmt.Printf("\t%s\n", ctrlSequence)
 		// }
 		// Generate the image
-		if subImg, startDelay, stopDelay, err = rawSub.Decode(metadata); err != nil {
+		if subImg, startDelay, stopDelay, err = rawSub.Decode(metadata, fullSizeImages); err != nil {
 			err = fmt.Errorf("failed to decode subtitle: %w", err)
 			return
 		}
 		// Create the final subtitle
 		pts = subPkt.Header.Extension.Data.ComputePTS()
 		subtitles = append(subtitles, Subtitle{
-			Start: pts + metadata.TimeOffset + startDelay,
-			Stop:  pts + metadata.TimeOffset + stopDelay,
+			Start: metadata.TimeOffset + pts + startDelay,
+			Stop:  metadata.TimeOffset + pts + stopDelay,
 			Image: subImg,
 		})
 	}
 	// Security check: some (rare) subtitles do not have stopDate, resulting in a stopDelay at 0 and so a 0 duration
 	// To fix this we will be using the next subtitle start date and remove 100 milliseconds to compute a stop value
-	// different from the start value allowing the subtitle to be shown
+	// different from the start value thus allowing the subtitle to be shown
 	for index, sub := range subtitles {
 		if sub.Start == sub.Stop {
 			// fmt.Println("Found a buggy sub !")

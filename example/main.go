@@ -15,9 +15,13 @@ const (
 )
 
 func main() {
-	subs, _, err := vobsub.Decode(idxFile)
+	fullSizeImages := true
+	subs, skipped, err := vobsub.Decode(idxFile, fullSizeImages)
 	if err != nil {
 		panic(err)
+	}
+	if skipped > 0 {
+		fmt.Printf("Skipped %d bad subtitles\n", skipped)
 	}
 	for index, sub := range subs {
 		filename := fmt.Sprintf("sub_%03d.png", index+1)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"strings"
 	"time"
 )
@@ -31,7 +32,7 @@ type SubtitleRAW struct {
 	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay, stopDelay time.Duration, err error) {
+func (sr SubtitleRAW) Decode(metadata IdxMetadata, fullSize bool) (img image.Image, startDelay, stopDelay time.Duration, err error) {
 	// Consolidate rendering metadata
 	var (
 		paletteColors *ControlSequencePalette
@@ -88,19 +89,15 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 			A: uint8(a),
 		}
 	}
-	// Create the image
+	// Create the subtitle image
 	coord := coordinates.Get()
-	subtitleWindowWidth, subtitleWindowHeight := coord.Size()
-	fmt.Printf("\tStart delay: %s, Stop delay: %s, X1: %+v X2: %+v (%d), Y1: %+v Y2: %+v (%d)\n",
-		startDelay, stopDelay, coord.Point1.X, coord.Point2.X, subtitleWindowWidth, coord.Point1.Y, coord.Point2.Y, subtitleWindowHeight,
-	)
-	rgbaImg := image.NewRGBA(image.Rect(coord.Point1.X, coord.Point1.Y, coord.Point2.X, coord.Point2.Y))
+	subtitleImg := image.NewRGBA(image.Rect(coord.Point1.X, coord.Point1.Y, coord.Point2.X, coord.Point2.Y))
 	firstLineOffset, secondLineOffset := RLEOffsets.Get()
 	//// odd lines
 	iter := &nibbleIterator{
 		data: sr.Data[firstLineOffset:secondLineOffset],
 	}
-	if err = drawOddOrEvenLines(rgbaImg, palette, iter, false); err != nil {
+	if err = drawOddOrEvenLines(subtitleImg, palette, iter, false); err != nil {
 		err = fmt.Errorf("failed to draw even lines: %w", err)
 		return
 	}
@@ -108,12 +105,28 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 	iter = &nibbleIterator{
 		data: sr.Data[secondLineOffset:],
 	}
-	if err = drawOddOrEvenLines(rgbaImg, palette, iter, true); err != nil {
+	if err = drawOddOrEvenLines(subtitleImg, palette, iter, true); err != nil {
 		err = fmt.Errorf("failed to draw even lines: %w", err)
 		return
 	}
-	// Return as a standard go image
-	img = rgbaImg
+	if !fullSize {
+		img = subtitleImg
+		return
+	}
+	// Place the image within the full size screen (and apply idx offset if any)
+	fullSizeImg := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
+	targetZone := image.Rectangle{
+		Min: image.Point{
+			X: metadata.Origin.X,
+			Y: metadata.Origin.Y,
+		},
+		Max: image.Point{
+			X: metadata.Width,
+			Y: metadata.Height,
+		},
+	}
+	draw.Draw(fullSizeImg, targetZone, subtitleImg, image.Point{}, draw.Src)
+	img = fullSizeImg
 	return
 }
 
