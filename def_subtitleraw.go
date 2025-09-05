@@ -74,58 +74,14 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 		err = fmt.Errorf("missing RLE offsets in subtitle")
 		return
 	}
-	// Ready to decode
-	coord := coordinates.Get()
-	subtitleWindowWidth, subtitleWindowHeight := coord.Size()
-	// fmt.Printf("\tStart delay: %s, Stop delay: %s, X1: %+v X2: %+v (%d), Y1: %+v Y2: %+v (%d)\n",
-	// 	startDelay, stopDelay, coord.Point1.X, coord.Point2.X, subtitleWindowWidth, coord.Point1.Y, coord.Point2.Y, subtitleWindowHeight,
-	// )
-	firstLineOffset, secondLineOffset := RLEOffsets.Get()
-	//// odd lines
-	var addition int
-	if subtitleWindowHeight%2 != 0 {
-		addition = 1
-	}
-	oddLines, err := parseRLE(sr.Data[firstLineOffset:secondLineOffset], subtitleWindowWidth, (subtitleWindowHeight/2)+addition)
-	if err != nil {
-		err = fmt.Errorf("failed to parse RLE odd lines: %w", err)
-		return
-	}
-	//// even lines
-	evenLines, err := parseRLE(sr.Data[secondLineOffset:], subtitleWindowWidth, subtitleWindowHeight/2)
-	if err != nil {
-		err = fmt.Errorf("failed to parse RLE even lines: %w", err)
-		return
-	}
-	// Deinterlace
-	// fmt.Printf("\t%d lines (%d oddLines, %d evenLines). Max len on odd: %d. Max len on even: %d.\n",
-	// 	len(oddLines)+len(evenLines), len(oddLines), len(evenLines), oddLines.MaxLinePixels(), evenLines.MaxLinePixels(),
-	// )
-	if len(evenLines.lines) > len(oddLines.lines) {
-		// should not happen, just to be sure
-		// err = fmt.Errorf("the is more even lines (%d) than odd lines (%d)", len(evenLines.lines), len(oddLines.lines))
-		// return
-		fmt.Printf("Warning: more even lines (%d) than odd lines (%d)\n", len(evenLines.lines), len(oddLines.lines))
-	}
-	orderedLines := rleLines{
-		lines: make([]rleLine, 0, len(oddLines.lines)+len(evenLines.lines)),
-	}
-	for i := range max(len(oddLines.lines), len(evenLines.lines)) {
-		if i < len(oddLines.lines) {
-			orderedLines.lines = append(orderedLines.lines, oddLines.lines[i])
-		}
-		if i < len(evenLines.lines) {
-			orderedLines.lines = append(orderedLines.lines, evenLines.lines[i])
-		}
-	}
 	// Adjust the palette
-	adjustedPalette := make(color.Palette, len(metadata.Palette))
-	copy(adjustedPalette, metadata.Palette)
+	palette := make(color.Palette, 4)
 	colorsIdx := paletteColors.GetIDs()
-	for colorIdx, alphaRatio := range alphaChannels.GetRatios() {
-		r, g, b, a := adjustedPalette[colorsIdx[colorIdx]].RGBA()
-		a = uint32(float64(a) * alphaRatio)
-		adjustedPalette[colorsIdx[colorIdx]] = color.RGBA{
+	alphaRatio := alphaChannels.GetRatios()
+	for i := range 4 {
+		r, g, b, a := metadata.Palette[colorsIdx[i]].RGBA()
+		a = uint32(float64(a) * alphaRatio[i])
+		palette[i] = color.RGBA{
 			R: uint8(r),
 			G: uint8(g),
 			B: uint8(b),
@@ -133,23 +89,28 @@ func (sr SubtitleRAW) Decode(metadata IdxMetadata) (img image.Image, startDelay,
 		}
 	}
 	// Create the image
-	rgbaImg := image.NewRGBA(image.Rect(0, 0, metadata.Width, metadata.Height))
-	var absoluteX, absoluteY int
-	for relativeY, line := range orderedLines.lines {
-		absoluteY = metadata.Origin.Y + coord.Point1.Y + relativeY
-		if absoluteY >= metadata.Height {
-			break // origin might have moved the rendering window out of the screen
-		}
-		for relativeX, pixel := range line {
-			absoluteX = metadata.Origin.X + coord.Point1.X + relativeX
-			if absoluteX >= metadata.Width {
-				break // origin might have moved the rendering window out of the screen
-			}
-			rgbaImg.Set(
-				absoluteX, absoluteY,
-				adjustedPalette[colorsIdx[pixel]],
-			)
-		}
+	coord := coordinates.Get()
+	subtitleWindowWidth, subtitleWindowHeight := coord.Size()
+	fmt.Printf("\tStart delay: %s, Stop delay: %s, X1: %+v X2: %+v (%d), Y1: %+v Y2: %+v (%d)\n",
+		startDelay, stopDelay, coord.Point1.X, coord.Point2.X, subtitleWindowWidth, coord.Point1.Y, coord.Point2.Y, subtitleWindowHeight,
+	)
+	rgbaImg := image.NewRGBA(image.Rect(coord.Point1.X, coord.Point1.Y, coord.Point2.X, coord.Point2.Y))
+	firstLineOffset, secondLineOffset := RLEOffsets.Get()
+	//// odd lines
+	iter := nibbleIterator{
+		data: sr.Data[firstLineOffset:secondLineOffset],
+	}
+	if err = drawOddOrEvenLines(rgbaImg, palette, iter, false); err != nil {
+		err = fmt.Errorf("failed to draw even lines: %w", err)
+		return
+	}
+	//// even lines
+	iter = nibbleIterator{
+		data: sr.Data[secondLineOffset:],
+	}
+	if err = drawOddOrEvenLines(rgbaImg, palette, iter, true); err != nil {
+		err = fmt.Errorf("failed to draw even lines: %w", err)
+		return
 	}
 	// Return as a standard go image
 	img = rgbaImg
@@ -178,10 +139,10 @@ type ControlSequencePalette [subtitleCTRLSeqCmdPaletteArgsLen]byte
 
 // GetPaletteIDs returns the 4 palette IDs colors that are used by the subtitle
 func (csp ControlSequencePalette) GetIDs() (colorsIdx [4]uint8) {
-	colorsIdx[0] = uint8(csp[0] & 0b11110000 >> 4)
-	colorsIdx[1] = uint8(csp[0] & 0b00001111)
-	colorsIdx[2] = uint8(csp[1] & 0b11110000 >> 4)
-	colorsIdx[3] = uint8(csp[1] & 0b00001111)
+	colorsIdx[3] = uint8(csp[0] & 0b11110000 >> 4)
+	colorsIdx[2] = uint8(csp[0] & 0b00001111)
+	colorsIdx[1] = uint8(csp[1] & 0b11110000 >> 4)
+	colorsIdx[0] = uint8(csp[1] & 0b00001111)
 	return
 }
 
@@ -429,117 +390,107 @@ func parseCTRLSeq(sequences []byte) (cs ControlSequence, nextOffset, index int, 
 	}
 }
 
-func parseRLE(data []byte, maxPixelsPerLine, maxLines int) (lines rleLines, err error) {
-	lines = rleLines{
-		maxPixelsPerLine: maxPixelsPerLine,
-		maxLines:         maxLines,
+func drawOddOrEvenLines(rgbaImg *image.RGBA, palette color.Palette, iter nibbleIterator, evenLines bool) (err error) {
+	bounds := rgbaImg.Bounds()
+	fmt.Println(bounds)
+	var (
+		relativeX, relativeY int
+		absoluteX, absoluteY int
+		length               int
+		pixel                rlePixel
+	)
+	if evenLines {
+		relativeY = 1
 	}
-	nibbles := nibbleIterator{data: data}
-	nbZeroesEncountered := 0
-	for nibble, _, ok := nibbles.Next(); ok; nibble, _, ok = nibbles.Next() {
-		switch nbZeroesEncountered {
-		case 0:
-			switch nibble {
-			case 0xf, 0xe, 0xd, 0xc, 0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4:
-				lines.AddPixel(rlePixel{
-					color:  nibble & 0b00000011,
-					repeat: nibble >> 2,
-				})
-				nbZeroesEncountered = 0
-			case 0x3, 0x2, 0x1:
-				// we need one more nibble
-				value := nibble << 4
-				if nibble, _, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point A)")
-					return
-				}
-				value |= nibble
-				// save
-				lines.AddPixel(rlePixel{
-					color:  value & 0b00000011,
-					repeat: value >> 2,
-				})
-				nbZeroesEncountered = 0
-			case 0x0:
-				nbZeroesEncountered++
-			default:
-				err = fmt.Errorf("unexpected nibble 0x%x (point B)", nibble)
-				return
-			}
-		case 1:
-			switch nibble {
-			case 0xf, 0xe, 0xd, 0xc, 0xb, 0xa, 0x9, 0x8, 0x7, 0x6, 0x5, 0x4:
-				// we need one more nibble
-				value := nibble << 4
-				if nibble, _, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point C)")
-					return
-				}
-				value |= nibble
-				// save
-				lines.AddPixel(rlePixel{
-					color:  value & 0b00000011,
-					repeat: value >> 2,
-				})
-				nbZeroesEncountered = 0
-			case 0x3, 0x2, 0x1:
-				// we need 2 more nibbles
-				value := uint16(nibble) << 8
-				if nibble, _, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point D)")
-					return
-				}
-				value |= uint16(nibble) << 4
-				if nibble, _, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point E)")
-					return
-				}
-				value |= uint16(nibble)
-				// save
-				lines.AddPixel(rlePixel{
-					color:  uint8(value & 0b0000000000000011),
-					repeat: uint8(value >> 2), // value max is 0x03FF == 0b00000011 0b11111111, and once shifted >> 2 it fits into uint8 and so it can be casted without overflow
-				})
-				nbZeroesEncountered = 0
-			case 0x0:
-				nbZeroesEncountered++
-			default:
-				err = fmt.Errorf("unexpected nibble 0x%x (point F)", nibble)
-				return
-			}
-		case 2:
-			// the only letter of the alphabet with 2 leading 0 is a line carriage 0x000*
-			// so the current nibbles should be the third 0
-			if nibble == 0 {
-				// discard the 4th nibble (should be 0 as well, but others values as been seen in the wild (see spu_notes))
-				var high bool
-				if _, high, ok = nibbles.Next(); !ok {
-					err = errors.New("unexpected end (point H)")
-					return
-				}
-				// Realign if necessary
-				if high {
-					// decoder must be byte aligned, discard the last nimble before commencing the new line
-					if _, _, ok = nibbles.Next(); !ok {
-						err = errors.New("unexpected end (point I)")
-						return
-					}
-					fmt.Println("aligning")
-				}
-				lines.NextLine()
-				nbZeroesEncountered = 0
-			} else {
-				fmt.Println("WEIRD")
-				// Let's ignore one previous zero
-				nbZeroesEncountered = 1 // that's seems to fix the issue :O
-				// and restart the handling of this non zero nibble
-				nibbles.StepBack()
-			}
-		default:
-			err = fmt.Errorf("unexpected number of zeroes (point J): %d", nbZeroesEncountered)
+	for !iter.Ended() {
+		if pixel, err = parseRLE(&iter); err != nil {
 			return
 		}
+		absoluteY = bounds.Min.Y + relativeY
+		if absoluteY > bounds.Max.Y {
+			return // origin might have moved the rendering window out of the screen
+		}
+		length = int(pixel.repeat)
+		if length == 0 {
+			// going until the end of line
+			length = bounds.Max.X - (bounds.Min.X + relativeX) + 1
+		}
+		for range length {
+			absoluteX = bounds.Min.X + relativeX
+			if absoluteX > bounds.Max.X {
+				fmt.Println("stepping out !")
+				relativeX = 0
+				absoluteX = bounds.Min.X + relativeX
+				relativeY += 2
+				// break
+			}
+			rgbaImg.Set(absoluteX, absoluteY, palette[pixel.color])
+			relativeX++
+		}
+		if pixel.repeat == 0 {
+			relativeX = 0
+			relativeY += 2
+		}
 	}
+	return
+}
+
+func parseRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
+	// 1 nibble letters:  rrcc
+	// 2 nibbles letters: 00rr rrcc
+	// 3 nibbles letters: 0000 rrrr rrcc
+	// 4 nibbles letters: 0000 00rr rrrr rrcc
+	var firstNibble, secondNibble, thirdNibble, fourthNibble byte
+	var ok bool
+	if firstNibble, _, ok = nibbles.Next(); !ok {
+		err = errors.New("no more data")
+		return
+	}
+	if firstNibble&0b1100 != 0 {
+		// 1 nibble letter
+		p.repeat = (firstNibble & 0b1100) >> 2
+		p.color = firstNibble & 0b0011
+		return
+	}
+	// 3 possibilities left, all requiring a second nibble
+	if secondNibble, _, ok = nibbles.Next(); !ok {
+		if firstNibble != 0 {
+			err = fmt.Errorf("missing second nibble after 0b%04b", firstNibble)
+		}
+		return
+	}
+	if firstNibble != 0 {
+		// 2 nibbles letter
+		p.repeat = (firstNibble&0b0011)<<2 | (secondNibble&0b1100)>>2
+		p.color = secondNibble & 0b0011
+		return
+	}
+	// 2 possibilities left, both requiring a third nibble
+	if thirdNibble, _, ok = nibbles.Next(); !ok {
+		if firstNibble != 0 || secondNibble != 0 {
+			err = fmt.Errorf("missing third nibble after 0b%04b 0b%04b", firstNibble, secondNibble)
+		}
+		return
+	}
+	if secondNibble&0b1100 != 0 {
+		// 3 nibbles letter
+		p.repeat = secondNibble<<2 | (thirdNibble&0b1100)>>2
+		p.color = thirdNibble & 0b0011
+		return
+	}
+	// 4 nibbles letter
+	// var high bool
+	if fourthNibble, _, ok = nibbles.Next(); !ok {
+		if firstNibble != 0 || secondNibble != 0 || thirdNibble != 0 {
+			err = fmt.Errorf("missing fourth nibble after 0b%04b 0b%04b 0b%04b", firstNibble, secondNibble, thirdNibble)
+		}
+		return
+	}
+	if p.repeat = secondNibble<<6 | thirdNibble<<2 | (fourthNibble&0b1100)>>2; p.repeat == 0 {
+		// carriage return, align iterator for next read
+		nibbles.Align()
+	}
+	p.color = fourthNibble & 0b0011
 	return
 }
 
@@ -551,7 +502,7 @@ type nibbleIterator struct {
 }
 
 func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
-	if ni.index >= len(ni.data) {
+	if ni.Ended() {
 		return
 	}
 	ok = true
@@ -568,57 +519,16 @@ func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
 	return
 }
 
-func (ni *nibbleIterator) StepBack() {
+func (ni *nibbleIterator) Align() {
 	if ni.readLow {
+		ni.index++
 		ni.readLow = false
-	} else if ni.index > 0 {
-		ni.readLow = true
-		ni.index--
 	}
 }
 
-type rleLines struct {
-	maxPixelsPerLine int
-	maxLines         int
-	lines            []rleLine
+func (ni *nibbleIterator) Ended() bool {
+	return ni.index >= len(ni.data)
 }
-
-func (rls *rleLines) AddPixel(pixel rlePixel) {
-	if len(rls.lines) == 0 {
-		rls.lines = make([]rleLine, 1, rls.maxLines)
-		rls.lines[0] = make(rleLine, 0, rls.maxPixelsPerLine)
-	}
-	currentLine := rls.lines[len(rls.lines)-1]
-	remainingPixelsOnLine := cap(currentLine) - len(currentLine)
-	for range pixel.repeat {
-		if remainingPixelsOnLine == 0 {
-			rls.lines[len(rls.lines)-1] = currentLine
-			if !rls.NextLine() {
-				fmt.Printf("discarding pixel: 0b%02b\n", pixel.color)
-				return
-			}
-			currentLine = rls.lines[len(rls.lines)-1]
-			remainingPixelsOnLine = rls.maxPixelsPerLine
-		}
-		currentLine = append(currentLine, pixel.color)
-		remainingPixelsOnLine--
-	}
-	rls.lines[len(rls.lines)-1] = currentLine
-}
-
-func (rls *rleLines) NextLine() bool {
-	if len(rls.lines) == 0 {
-		rls.lines = make([]rleLine, 1, rls.maxLines)
-		rls.lines[0] = make(rleLine, 0)
-	} else if len(rls.lines) >= rls.maxLines {
-		fmt.Println("discarding line")
-		return false
-	}
-	rls.lines = append(rls.lines, make(rleLine, 0, rls.maxPixelsPerLine))
-	return true
-}
-
-type rleLine []uint8
 
 type rlePixel struct {
 	color  uint8 // only 4 values are used: 0x00, 0x01, 0x02, 0x03
