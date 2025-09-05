@@ -450,7 +450,7 @@ func decodeRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 	// 4 nibbles letters: 0000 00rr rrrr rrcc
 	var firstNibble, secondNibble, thirdNibble, fourthNibble byte
 	var ok bool
-	if firstNibble, _, ok = nibbles.Next(); !ok {
+	if firstNibble, ok = nibbles.Next(); !ok {
 		err = errors.New("no more data")
 		return
 	}
@@ -461,7 +461,7 @@ func decodeRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 		return
 	}
 	// 3 possibilities left, all requiring a second nibble
-	if secondNibble, _, ok = nibbles.Next(); !ok {
+	if secondNibble, ok = nibbles.Next(); !ok {
 		if firstNibble != 0 {
 			err = fmt.Errorf("missing second nibble after 0b%04b", firstNibble)
 		}
@@ -474,7 +474,7 @@ func decodeRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 		return
 	}
 	// 2 possibilities left, both requiring a third nibble
-	if thirdNibble, _, ok = nibbles.Next(); !ok {
+	if thirdNibble, ok = nibbles.Next(); !ok {
 		if firstNibble != 0 || secondNibble != 0 {
 			err = fmt.Errorf("missing third nibble after 0b%04b 0b%04b", firstNibble, secondNibble)
 		}
@@ -487,8 +487,7 @@ func decodeRLE(nibbles *nibbleIterator) (p rlePixel, err error) {
 		return
 	}
 	// 4 nibbles letter
-	// var high bool
-	if fourthNibble, _, ok = nibbles.Next(); !ok {
+	if fourthNibble, ok = nibbles.Next(); !ok {
 		if firstNibble != 0 || secondNibble != 0 || thirdNibble != 0 {
 			err = fmt.Errorf("missing fourth nibble after 0b%04b 0b%04b 0b%04b", firstNibble, secondNibble, thirdNibble)
 		}
@@ -506,14 +505,13 @@ type nibbleIterator struct {
 	readLow bool
 }
 
-func (ni *nibbleIterator) Next() (nibble byte, high, ok bool) {
+func (ni *nibbleIterator) Next() (nibble byte, ok bool) {
 	if ni.Ended() {
 		return
 	}
 	ok = true
 	if !ni.readLow {
 		// First read at index
-		high = true
 		nibble = (ni.data[ni.index] & 0b11110000) >> 4
 	} else {
 		// Second read at index
