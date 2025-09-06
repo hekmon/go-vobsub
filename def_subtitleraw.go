@@ -11,6 +11,9 @@ import (
 )
 
 const (
+	subtitleHeaderLength                  = 2
+	subtitleHeaderDataLength              = 2
+	subtitleHeadersTotalLen               = subtitleHeaderLength + subtitleHeaderDataLength
 	subtitleCTRLSeqDateLen                = 2
 	subtitleCTRLSeqCmdForceDisplaying     = 0x00
 	subtitleCTRLSeqCmdStartDate           = 0x01
@@ -185,8 +188,10 @@ func (csc ControlSequenceCoordinates) Get() (coord SubtitleCoordinates) {
 type ControlSequenceRLEOffsets [subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
 
 func (csrleo ControlSequenceRLEOffsets) Get() (firstLineOffset int, secondLineOffset int) {
-	firstLineOffset = int(csrleo[0])<<8 | int(csrleo[1])
-	secondLineOffset = int(csrleo[2])<<8 | int(csrleo[3])
+	// original offset is from the beginning of the paquet but we stripped the 2 headers from the data payload
+	// during parsing (with extractRAWSubtitle()) so we need to remove the headers length to get the correct offsets
+	firstLineOffset = (int(csrleo[0])<<8 | int(csrleo[1])) - subtitleHeadersTotalLen
+	secondLineOffset = (int(csrleo[2])<<8 | int(csrleo[3])) - subtitleHeadersTotalLen
 	return
 }
 
@@ -261,22 +266,23 @@ func (coord SubtitleCoordinates) Size() (width, height int) {
 */
 
 func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
-	// Read the size first
+	// Read the size first (size includes total header len)
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
-	if len(packet.Payload) != size {
+	if size != len(packet.Payload) {
 		err = fmt.Errorf("the read packet size (%d) does not match the received packet length (%d)", size, len(packet.Payload))
 		return
 	}
-	// Read the data packet size in order to split the data and the control sequences
+	// Read the data packet size in order to split the data and the control sequences (size include the data header len)
 	dataSize := int(packet.Payload[2])<<8 | int(packet.Payload[3])
 	// fmt.Printf("Data Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[2], packet.Payload[3], dataSize)
-	if dataSize > len(packet.Payload)-2 {
+	if dataSize > len(packet.Payload)-subtitleHeaderLength {
+		fmt.Println(dataSize, len(packet.Payload))
 		err = fmt.Errorf("the read data packet size (%d) is greater than the total packet size (%d)", size, len(packet.Payload))
 		return
 	}
 	// Handle subtitle data and control sequences
-	subtitle.Data = packet.Payload[4:dataSize]
+	subtitle.Data = packet.Payload[subtitleHeadersTotalLen:dataSize]
 	if subtitle.ControlSequences, err = parseCTRLSeqs(packet.Payload[dataSize:], dataSize); err != nil {
 		err = fmt.Errorf("failed to parse control sequences: %w", err)
 		return
