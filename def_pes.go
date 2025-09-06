@@ -21,7 +21,7 @@ func (pesp PESPacket) ExtractSubtitle() (subtitle SubtitleRaw, err error) {
 		err = fmt.Errorf("the packet stream ID (%s) does not match the expected private stream 1", pesp.Header.MPH.StreamID())
 		return
 	}
-	return extractRAWSubtitle(pesp)
+	return extractRawSubtitle(pesp)
 }
 
 // PESHeader represents the headers and associated data of aPacketized Elementary Stream header.

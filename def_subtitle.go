@@ -37,11 +37,15 @@ const (
 	subtitleCTRLSeqCmdEnd                 = 0xff
 )
 
+// SubtitleRaw struct contains the raw data of a subtitle and its associated control sequences.
+// It is used to decode the subtitle into an image.
 type SubtitleRaw struct {
 	Data             []byte
 	ControlSequences []ControlSequence
 }
 
+// Decode method takes the subtitle metadata and a boolean flag to determine if full-size images should be generated.
+// It returns an image of the subtitle, its start delay, stop delay, and any errors that occurred during decoding.
 func (sr SubtitleRaw) Decode(metadata IdxMetadata, fullSize bool) (img image.Image, startDelay, stopDelay time.Duration, err error) {
 	// Consolidate rendering metadata
 	var (
@@ -196,7 +200,7 @@ type ControlSequenceRLEOffsets [subtitleCTRLSeqCmdRLEOffsetsArgsLen]byte
 
 func (csrleo ControlSequenceRLEOffsets) Get() (firstLineOffset int, secondLineOffset int) {
 	// original offset is from the beginning of the paquet but we stripped the 2 headers from the data payload
-	// during parsing (with extractRAWSubtitle()) so we need to remove the headers length to get the correct offsets
+	// during parsing (with extractRawSubtitle()) so we need to remove the headers length to get the correct offsets
 	firstLineOffset = (int(csrleo[0])<<8 | int(csrleo[1])) - subtitleHeadersTotalLen
 	secondLineOffset = (int(csrleo[2])<<8 | int(csrleo[3])) - subtitleHeadersTotalLen
 	return
@@ -272,7 +276,7 @@ func (coord SubtitlesWindow) Size() (width, height int) {
 	Extract helpers
 */
 
-func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRaw, err error) {
+func extractRawSubtitle(packet PESPacket) (subtitle SubtitleRaw, err error) {
 	// Read the size first (size includes total header len)
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
