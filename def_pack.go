@@ -76,7 +76,7 @@ func (ph PackHeader) SCR() time.Duration {
 	return time.Duration(ticks * uint64(time.Second) / SCRFrequency)
 }
 
-// ProgramMuxRate is a (originaly 22 bits) integer specifying the rate at which the program stream target decoder receives the Program Stream during the pack in which it is included.
+// ProgramMuxRate is a (originally 22 bits) integer specifying the rate at which the program stream target decoder receives the Program Stream during the pack in which it is included.
 // The value of ProgramMuxRate is measured in units of 50 bytes/second. The value 0 is forbidden.
 func (ph PackHeader) ProgramMuxRate() uint64 {
 	return uint64(ph.Remaining[6])<<(16-2) | uint64(ph.Remaining[7])<<(8-2) | uint64(ph.Remaining[8])>>2

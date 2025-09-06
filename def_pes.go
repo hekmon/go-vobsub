@@ -511,7 +511,7 @@ const (
 // SubStreamID represents a sub stream ID in a PES packet (only for private streams)
 type SubStreamID [1]byte
 
-// SubtitleID returns the actual subtitle stream ID by substracting the base value
+// SubtitleID returns the actual subtitle stream ID by subtracting the base value
 func (ssid SubStreamID) SubtitleID() int {
 	return int(ssid[0]) - SubStreamIDBaseValue
 }

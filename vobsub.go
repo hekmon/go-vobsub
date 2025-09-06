@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Decode reads a sub file and its associated idx file to extract and generate its embeded subtitles images.
+// Decode reads a sub file and its associated idx file to extract and generate its embedded subtitles images.
 // As .sub files can contains multilples streams, the returned map contains all streams with their ID as key.
 // Most of sub files only contains one stream (ID 0).
 func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, skippedBadSub []error, err error) {
@@ -225,7 +225,7 @@ func parsePackHeader(fd *os.File, currentPosition int64, mph MPEGHeader) (packet
 		return
 	}
 	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
-		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		err = fmt.Errorf("failed to read PES Packet Length header: %w", err)
 		return
 	}
 	currentPosition += int64(nbRead)
@@ -292,7 +292,7 @@ func parsePaddingStream(fd *os.File, currentPosition int64, mph MPEGHeader) (nex
 		MPH: mph,
 	}
 	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
-		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		err = fmt.Errorf("failed to read PES Packet Length header: %w", err)
 		return
 	}
 	currentPosition += int64(nbRead)
