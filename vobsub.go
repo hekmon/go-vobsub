@@ -1,8 +1,10 @@
 package vobsub
 
 import (
+	"errors"
 	"fmt"
 	"image"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,7 +24,7 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 	// Parse Idx file to get subtitle metadata
 	metadata, err := ReadIdxFile(idxFile)
 	if err != nil {
-		err = fmt.Errorf("failed to read Idx file: %w", err)
+		err = fmt.Errorf("failed to read .idx file: %w", err)
 		return
 	}
 	// Parse Sub
@@ -142,5 +144,169 @@ func ReadSubFile(subFile string) (privateStream1Packets []PESPacket, err error) 
 			privateStream1Packets = append(privateStream1Packets, packet)
 		}
 	}
+	return
+}
+
+const (
+	stopFlagValue = -1
+)
+
+func parsePacket(fd *os.File, currentPosition int64) (packet PESPacket, nextAt int64, err error) {
+	// Read Start code and verify it is a pack header
+	var (
+		mph    MPEGHeader
+		nbRead int
+	)
+	if nbRead, err = fd.ReadAt(mph[:], currentPosition); err != nil {
+		if errors.Is(err, io.EOF) {
+			// strange but seen in the wild
+			err = nil
+			nextAt = stopFlagValue
+		} else {
+			err = fmt.Errorf("failed to read start code header: %w", err)
+		}
+		return
+	}
+	currentPosition += int64(nbRead)
+	if err = mph.Validate(); err != nil {
+		err = fmt.Errorf("invalid MPEG header: %w", err)
+		return
+	}
+	// Act depending on stream ID
+	switch mph.StreamID() {
+	case StreamIDPackHeader:
+		if packet, nextAt, err = parsePackHeader(fd, currentPosition, mph); err != nil {
+			err = fmt.Errorf("failed to parse Pack Header: %w", err)
+			return
+		}
+		return
+	case StreamIDPaddingStream:
+		if nextAt, err = parsePaddingStream(fd, currentPosition, mph); err != nil {
+			err = fmt.Errorf("failed to parse padding stream: %w", err)
+			return
+		}
+		return
+	case StreamIDProgramEnd:
+		nextAt = stopFlagValue
+		return
+	default:
+		err = fmt.Errorf("unexpected stream ID: %s", mph.StreamID())
+		return
+	}
+}
+
+func parsePackHeader(fd *os.File, currentPosition int64, mph MPEGHeader) (packet PESPacket, nextPacketPosition int64, err error) {
+	var nbRead int
+	// Finish reading pack header
+	ph := PackHeader{
+		MPH: mph,
+	}
+	if nbRead, err = fd.ReadAt(ph.Remaining[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read pack header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	if err = ph.Validate(); err != nil {
+		err = fmt.Errorf("invalid pack header: %w", err)
+		return
+	}
+	currentPosition += ph.StuffingBytesLength()
+	// fmt.Println(ph.String())
+	// fmt.Println(ph.GoString())
+	// Next read the PES header
+	var pes PESHeader
+	if nbRead, err = fd.ReadAt(pes.MPH[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	if err = pes.MPH.Validate(); err != nil {
+		err = fmt.Errorf("invalid PES header: invalid start code: %w", err)
+		return
+	}
+	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
+	// Continue depending on stream ID
+	switch pes.MPH.StreamID() {
+	case StreamIDPrivateStream1:
+		if packet, err = parsePESPrivateStream1Packet(fd, currentPosition, pes); err != nil {
+			err = fmt.Errorf("failed to parse subtitle stream (private stream 1) packet: %w", err)
+			return
+		}
+		return
+	default:
+		err = fmt.Errorf("unexpected PES Stream ID: %s", pes.MPH.StreamID())
+		return
+	}
+}
+
+func parsePESPrivateStream1Packet(fd *os.File, currentPosition int64, preHeader PESHeader) (packet PESPacket, err error) {
+	var nbRead int
+	packet.Header = preHeader
+	// Finish reading PES header
+	//// 0xBD stream type has PES header extension, read it
+	packet.Header.Extension = new(PESExtension)
+	if nbRead, err = fd.ReadAt(packet.Header.Extension.Header[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES extension header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	//// Read PES Extension Data
+	extensionData := make([]byte, packet.Header.Extension.RemainingHeaderLength())
+	if nbRead, err = fd.ReadAt(extensionData, currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES extension data: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	if err = packet.Header.ParseExtensionData(extensionData); err != nil {
+		err = fmt.Errorf("failed to parse extension header data: %w", err)
+		return
+	}
+	//// Read sub stream id for private streams
+	if nbRead, err = fd.ReadAt(packet.Header.SubStreamID[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read sub stream id: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	//// Headers done
+	// fmt.Println(packet.Header.String())
+	// fmt.Println(packet.Header.GoString())
+	// Payload
+	payloadLen := packet.Header.GetPacketLength() - len(packet.Header.Extension.Header) - len(extensionData) - len(packet.Header.SubStreamID)
+	packet.Payload = make([]byte, payloadLen)
+	if _, err = fd.ReadAt(packet.Payload, currentPosition); err != nil {
+		err = fmt.Errorf("failed to read the payload: %w", err)
+		return
+	}
+	return
+}
+
+func parsePaddingStream(fd *os.File, currentPosition int64, mph MPEGHeader) (nextPacketPosition int64, err error) {
+	var nbRead int
+	// Read the PES header used in padding
+	pes := PESHeader{
+		MPH: mph,
+	}
+	if nbRead, err = fd.ReadAt(pes.PacketLength[:], currentPosition); err != nil {
+		err = fmt.Errorf("failed to read PES Packet Lenght header: %w", err)
+		return
+	}
+	currentPosition += int64(nbRead)
+	nextPacketPosition = currentPosition + int64(pes.GetPacketLength()) // packet len is all data after the header ending with the data len
+	// // Debug
+	// fmt.Println("Padding len:", pes.GetPacketLength())
+	// buffer := make([]byte, pes.GetPacketLength())
+	// if _, err = fd.ReadAt(buffer, currentPosition); err != nil {
+	// 	err = fmt.Errorf("failed to read the payload: %w", err)
+	// 	return
+	// }
+	// for _, b := range buffer {
+	// 	fmt.Printf("0x%02x ", b) // all should be 0xff
+	// }
+	// fmt.Println()
 	return
 }
