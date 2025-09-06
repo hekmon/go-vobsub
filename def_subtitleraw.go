@@ -270,7 +270,7 @@ func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)
 	if size != len(packet.Payload) {
-		err = fmt.Errorf("the read packet size (%d) does not match the received packet length (%d)", size, len(packet.Payload))
+		err = fmt.Errorf("the packet size header value (%d) does not match the received packet length (%d)", size, len(packet.Payload))
 		return
 	}
 	// Read the data packet size in order to split the data and the control sequences (size include the data header len)
@@ -278,7 +278,7 @@ func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
 	// fmt.Printf("Data Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[2], packet.Payload[3], dataSize)
 	if dataSize > len(packet.Payload)-subtitleHeaderLength {
 		fmt.Println(dataSize, len(packet.Payload))
-		err = fmt.Errorf("the read data packet size (%d) is greater than the total packet size (%d)", size, len(packet.Payload))
+		err = fmt.Errorf("the data packet size header value (%d) exceeds the total packet data size (%d)", size, len(packet.Payload))
 		return
 	}
 	// Handle subtitle data and control sequences
