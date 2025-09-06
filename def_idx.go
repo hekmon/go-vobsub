@@ -43,7 +43,8 @@ type IdxMetadata struct {
 	Palette         color.Palette
 }
 
-func parseIdx(reader io.Reader) (metadata IdxMetadata, err error) {
+// ParseIdx scans a reader to extract the index metadata of a sub file (.idx file)
+func ParseIdx(reader io.Reader) (metadata IdxMetadata, err error) {
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		line := scanner.Text()
