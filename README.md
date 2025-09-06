@@ -21,7 +21,7 @@ const (
 	subFile = "/path/to/you/subtitle.sub"
 
 	// set to true te generate images with the size of the original video feed with positioned subs
-	// set to false to generate only the subtitle rendering window (smaller images with less empty space)
+	// set to false to generate only the subtitle rendering window (smaller images, less empty space)
 	fullSizeImages = false
 )
 
@@ -39,8 +39,10 @@ func main() {
 	}
 	for streamID, streamSubs := range subs {
 		for index, sub := range streamSubs {
-			filename := fmt.Sprintf("stream-%d_sub-%04d.png", streamID, index+1)
-			fmt.Printf("Stream #%d - Subtitle #%d: %s --> %s\n", streamID, index+1, sub.Start, sub.Stop)
+			filename := fmt.Sprintf("stream-%d_sub-%04d.png",
+				streamID, index+1)
+			fmt.Printf("Stream #%d - Subtitle #%d: %s --> %s\n",
+				streamID, index+1, sub.Start, sub.Stop)
 			if err = writePNG(filename, sub.Image); err != nil {
 				panic(err)
 			}
