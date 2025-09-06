@@ -1,6 +1,14 @@
-# go-vobsub
+# VobSub
 
-Golang library to extract VobSub subtitles from .sub/.idx files and generate their corresponding images with their associated timestamps.
+[![Go Reference](https://pkg.go.dev/badge/github.com/hekmon/go-vobsub.svg)](https://pkg.go.dev/github.com/hekmon/go-vobsub) [![Go report card](https://goreportcard.com/badge/github.com/hekmon/go-vobsub)](https://goreportcard.com/report/github.com/hekmon/go-vobsub)
+
+VobSub is a dependency-free pure Go library that extracts VobSub subtitles from .sub/.idx files and generates their corresponding images with associated timestamps.
+
+## Installation
+
+```bash
+go get -u "github.com/hekmon/go-vobsub"
+```
 
 ## Example
 
