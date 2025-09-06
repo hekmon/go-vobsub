@@ -30,11 +30,13 @@ func main() {
 			fmt.Printf(" \t%v\n", err)
 		}
 	}
-	for index, sub := range subs {
-		filename := fmt.Sprintf("sub_%03d.png", index+1)
-		fmt.Printf("Subtitle #%d: %s --> %s\n", index+1, sub.Start, sub.Stop)
-		if err = writePNG(filename, sub.Image); err != nil {
-			panic(err)
+	for streamID, streamSubs := range subs {
+		for index, sub := range streamSubs {
+			filename := fmt.Sprintf("stream-%d_sub-%04d.png", streamID, index+1)
+			fmt.Printf("Stream #%d - Subtitle #%d: %s --> %s\n", streamID, index+1, sub.Start, sub.Stop)
+			if err = writePNG(filename, sub.Image); err != nil {
+				panic(err)
+			}
 		}
 	}
 }
