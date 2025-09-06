@@ -432,10 +432,10 @@ func (ptd PTSDTSPresence) String() string {
 	switch ptd {
 	case NoPTSorDTSPresent:
 		return "No PTS or DTS present"
-	case JustPTS:
-		return "Just PTS (forbidden)"
 	case JustDTS:
-		return "Just DTS"
+		return "Just DTS (forbidden)"
+	case JustPTS:
+		return "Just PTS"
 	case BothPTSandDTS:
 		return "Both PTS and DTS"
 	default:

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"image"
 	"image/color"
 	"io"
 	"strconv"
@@ -28,13 +29,14 @@ const (
 	idxPaletteLen       = 16
 )
 
+// IdxMetadata contains the index metadata of a sub file (.idx file)
 type IdxMetadata struct {
 	Width, Height   int
-	Origin          Coordinate
+	Origin          image.Point
 	AlphaRatio      float64
 	Smooth          bool
 	FadeIn, FadeOut time.Duration
-	Align           string // unsupported for now
+	Align           string // not supported yet
 	TimeOffset      time.Duration
 	ForcedSubs      bool
 	LangIdx         int

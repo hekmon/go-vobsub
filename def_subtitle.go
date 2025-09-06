@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// Subtitle is the final, high level, representation of a subtitle
+type Subtitle struct {
+	Start time.Duration
+	Stop  time.Duration
+	Image image.Image
+}
+
 const (
 	subtitleHeaderLength                  = 2
 	subtitleHeaderDataLength              = 2
@@ -177,7 +184,7 @@ func (csac ControlSequenceAlphaChannels) GetRatios() (alphas [4]float64) {
 type ControlSequenceCoordinates [subtitleCTRLSeqCmdCoordinatesArgsLen]byte
 
 // GetCoordinates returns the coordinates of the subtitle canvea on the screen : x1, x2, y1, y2
-func (csc ControlSequenceCoordinates) Get() (coord SubtitleCoordinates) {
+func (csc ControlSequenceCoordinates) Get() (coord SubtitlesWindow) {
 	coord.Point1.X = int(csc[0])<<4 | int(csc[1]&0b11110000)>>4
 	coord.Point2.X = int(csc[1]&0b00001111)<<8 | int(csc[2])
 	coord.Point1.Y = int(csc[3])<<4 | int(csc[4]&0b11110000)>>4
@@ -253,11 +260,11 @@ func (cs ControlSequence) String() string {
 	return builder.String()
 }
 
-type SubtitleCoordinates struct {
-	Point1, Point2 Coordinate
+type SubtitlesWindow struct {
+	Point1, Point2 image.Point
 }
 
-func (coord SubtitleCoordinates) Size() (width, height int) {
+func (coord SubtitlesWindow) Size() (width, height int) {
 	return coord.Point2.X - coord.Point1.X + 1, coord.Point2.Y - coord.Point1.Y + 1
 }
 

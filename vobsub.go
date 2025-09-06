@@ -8,7 +8,8 @@ import (
 	"time"
 )
 
-// as .sub files can contains multilples streams, the returns map contains all streams with their ID as key.
+// Decode reads a sub file and its associated idx file to extract and generate its embeded subtitles images.
+// As .sub files can contains multilples streams, the returned map contains all streams with their ID as key.
 // Most of sub files only contains one stream (ID 0).
 func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, skippedBadSub []error, err error) {
 	// Verify and prepare files path
@@ -19,14 +20,13 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 	}
 	idxFile := subFile[:len(subFile)-len(extension)] + ".idx"
 	// Parse Idx file to get subtitle metadata
-	metadata, err := readIdxFile(idxFile)
+	metadata, err := ReadIdxFile(idxFile)
 	if err != nil {
 		err = fmt.Errorf("failed to read Idx file: %w", err)
 		return
 	}
-	// fmt.Printf("Idx metadata: %+v\n", metadata)
 	// Parse Sub
-	privateStream1Packets, err := readSubFile(subFile)
+	privateStream1Packets, err := ReadSubFile(subFile)
 	if err != nil {
 		err = fmt.Errorf("failed to read .sub file: %w", err)
 		return
@@ -56,9 +56,6 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 		subImg     image.Image
 	)
 	for index, subPkt := range subtitlesPackets {
-		fmt.Printf("Subtitle #%d -> (Stream ID #%d) Presentation TimeStamp: %s Payload: %d\n",
-			index+1, subPkt.Header.SubStreamID.SubtitleID(), subPkt.Header.Extension.Data.ComputePTS(), len(subPkt.Payload),
-		)
 		// Recover the current stream subs slice
 		if streamSubs, found = subtitles[subPkt.Header.SubStreamID.SubtitleID()]; !found {
 			streamSubs = make([]Subtitle, 0, len(subtitlesPackets))
@@ -71,9 +68,6 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 			err = nil
 			continue
 		}
-		// for _, ctrlSequence := range subtitle.ControlSequences {
-		// 	fmt.Printf("\t%s\n", ctrlSequence)
-		// }
 		// Generate the image
 		if subImg, startDelay, stopDelay, err = rawSub.Decode(metadata, fullSizeImages); err != nil {
 			err = fmt.Errorf("failed to decode subtitle: %w", err)
@@ -86,6 +80,7 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 			Stop:  metadata.TimeOffset + pts + stopDelay,
 			Image: subImg,
 		})
+		// Save the slice with the new sub batch to its stream
 		subtitles[subPkt.Header.SubStreamID.SubtitleID()] = streamSubs
 	}
 	// Security check: some (rare) subtitles do not have stopDate, resulting in a stopDelay at 0 and so a 0 duration
@@ -94,13 +89,11 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 	for _, streamSubs := range subtitles {
 		for index, sub := range streamSubs {
 			if sub.Start == sub.Stop {
-				// fmt.Println("Found a buggy sub !")
 				if index+1 < len(subtitles) {
 					potentialStop := streamSubs[index+1].Start - 100*time.Millisecond
 					if potentialStop > sub.Start {
 						sub.Stop = potentialStop
 						streamSubs[index] = sub
-						// fmt.Printf("Sub fixed ! Start: %s Stop: %s\n", subtitles[index].Start, subtitles[index].Stop)
 					} // else nothing we can do (it might work with less than 100ms but it won't be readable either way[too fast])
 				} // else nothing we can do here
 			}
@@ -109,7 +102,8 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 	return
 }
 
-func readIdxFile(Idxfile string) (metadata IdxMetadata, err error) {
+// ReadIdxFile reads the idx file and returns its metadata.
+func ReadIdxFile(Idxfile string) (metadata IdxMetadata, err error) {
 	// Open the binary sub file
 	fd, err := os.Open(Idxfile)
 	if err != nil {
@@ -125,7 +119,8 @@ func readIdxFile(Idxfile string) (metadata IdxMetadata, err error) {
 	return
 }
 
-func readSubFile(subFile string) (privateStream1Packets []PESPacket, err error) {
+// ReadSubFile reads the sub file and returns its packets.
+func ReadSubFile(subFile string) (privateStream1Packets []PESPacket, err error) {
 	// Open the binary sub file
 	fd, err := os.Open(subFile)
 	if err != nil {
