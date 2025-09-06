@@ -15,7 +15,7 @@ type PESPacket struct {
 }
 
 // ExtractSubtitle extract the raw subtitle contained in the PES packet if the pes packet contains a subtitle packet (private stream 1)
-func (pesp PESPacket) ExtractSubtitle() (subtitle SubtitleRAW, err error) {
+func (pesp PESPacket) ExtractSubtitle() (subtitle SubtitleRaw, err error) {
 	// Check if the packet is a subtitle packet
 	if pesp.Header.MPH.StreamID() != StreamIDPrivateStream1 {
 		err = fmt.Errorf("the packet stream ID (%s) does not match the expected private stream 1", pesp.Header.MPH.StreamID())
@@ -127,87 +127,88 @@ type PESExtension struct {
 }
 
 // Valid checks if the optional header marker is present at the start of the optional headers.
-func (poh *PESExtension) Validate() error {
-	if poh.Header[0]>>6 != pesExtensionMarker {
-		return fmt.Errorf("invalid PES extension header marker: expected 0x%02X, got 0x%02X", pesExtensionMarker, poh.Header[0]>>6)
+func (pese *PESExtension) Validate() error {
+	if pese.Header[0]>>6 != pesExtensionMarker {
+		return fmt.Errorf("invalid PES extension header marker: expected 0x%02X, got 0x%02X",
+			pesExtensionMarker, pese.Header[0]>>6)
 	}
 	// Extension is validated during parsing with ParseExtensionData()
 	return nil
 }
 
 // ScramblingControl returns the scrambling value. Check the related constants.
-func (poh *PESExtension) ScramblingControl() ScramblingControl {
-	return ScramblingControl((poh.Header[0] & 0b00110000) >> 4)
+func (pese *PESExtension) ScramblingControl() ScramblingControl {
+	return ScramblingControl((pese.Header[0] & 0b00110000) >> 4)
 }
 
 // Priority returns true if the priority bit is set to 1, indicating that the PES packet has higher priority than other packets in the same PID. false = Normal priority, true = High priority.
-func (poh *PESExtension) HighPriority() bool {
-	return (poh.Header[0]&0b00001000)>>3 == 1
+func (pese *PESExtension) HighPriority() bool {
+	return (pese.Header[0]&0b00001000)>>3 == 1
 }
 
 // DataAligned returns true if the data alignment indicator is set to 1, indicating that the payload starts with a byte-aligned elementary stream. false = Not aligned, true = Aligned.
-func (poh *PESExtension) DataAligned() bool {
-	return (poh.Header[0]&0b00000100)>>2 == 1
+func (pese *PESExtension) DataAligned() bool {
+	return (pese.Header[0]&0b00000100)>>2 == 1
 }
 
 // Copyright returns true if the copyright bit is set to 1, indicating that the PES packet contains copyrighted material. false = Not copyrighted, true = Copyrighted.
-func (poh *PESExtension) Copyright() bool {
-	return (poh.Header[0]&0b00000010)>>1 == 1
+func (pese *PESExtension) Copyright() bool {
+	return (pese.Header[0]&0b00000010)>>1 == 1
 }
 
 // Original returns true if the original bit is set to 1, indicating that the PES packet contains original material. false = Copy, true = Original.
-func (poh *PESExtension) Original() bool {
-	return poh.Header[0]&0b00000001 == 1
+func (pese *PESExtension) Original() bool {
+	return pese.Header[0]&0b00000001 == 1
 }
 
 // PTSDTSPresence returns the Presentation Time Stamp and Decode Time Stamp presence
-func (poh *PESExtension) PTSDTSPresence() PTSDTSPresence {
-	return PTSDTSPresence(poh.Header[1] >> 6)
+func (pese *PESExtension) PTSDTSPresence() PTSDTSPresence {
+	return PTSDTSPresence(pese.Header[1] >> 6)
 }
 
 // PTSPresent returns if the Presentation Time Stamp is present
-func (poh *PESExtension) PTSPresent() bool {
-	return poh.PTSDTSPresence()&JustPTS == 1
+func (pese *PESExtension) PTSPresent() bool {
+	return pese.PTSDTSPresence()&JustPTS == 1
 }
 
 // DTSPresent returns if the Decode Time Stamp is present
-func (poh *PESExtension) DTSPresent() bool {
-	return poh.PTSDTSPresence()&JustDTS == 1
+func (pese *PESExtension) DTSPresent() bool {
+	return pese.PTSDTSPresence()&JustDTS == 1
 }
 
 // ESCRPresent returns if the Elementary Stream Clock Reference is present
-func (poh *PESExtension) ESCRPresent() bool {
-	return (poh.Header[1]&0b00100000)>>5 == 1
+func (pese *PESExtension) ESCRPresent() bool {
+	return (pese.Header[1]&0b00100000)>>5 == 1
 }
 
 // ESRatePresent returns if the ES Rate is present
-func (poh *PESExtension) ESRatePresent() bool {
-	return (poh.Header[1]&0b00010000)>>4 == 1
+func (pese *PESExtension) ESRatePresent() bool {
+	return (pese.Header[1]&0b00010000)>>4 == 1
 }
 
 // DSMTrickMode returns if the DSM Trick Mode flag is set
-func (poh *PESExtension) DSMTrickMode() bool {
-	return (poh.Header[1]&0b00001000)>>3 == 1
+func (pese *PESExtension) DSMTrickMode() bool {
+	return (pese.Header[1]&0b00001000)>>3 == 1
 }
 
 // AdditionalCopyInfoPresent returns if Additional Copy Informations are present
-func (poh *PESExtension) AdditionalCopyInfoPresent() bool {
-	return (poh.Header[1]&0b00000100)>>2 == 1
+func (pese *PESExtension) AdditionalCopyInfoPresent() bool {
+	return (pese.Header[1]&0b00000100)>>2 == 1
 }
 
 // CRCPresent returns if the previous packet CRC is present
-func (poh *PESExtension) CRCPresent() bool {
-	return (poh.Header[1]&0b00000010)>>1 == 1
+func (pese *PESExtension) CRCPresent() bool {
+	return (pese.Header[1]&0b00000010)>>1 == 1
 }
 
 // SecondExtensionPresent returns if the second EPS extension is present
-func (poh *PESExtension) SecondExtensionPresent() bool {
-	return poh.Header[1]&0b00000001 == 1
+func (pese *PESExtension) SecondExtensionPresent() bool {
+	return pese.Header[1]&0b00000001 == 1
 }
 
 // RemainingHeaderLength returns the remaining length of the PES extension headers after the flags has been parsed and before the payload starts
-func (poh *PESExtension) RemainingHeaderLength() int {
-	return int(poh.Header[2])
+func (pese *PESExtension) RemainingHeaderLength() int {
+	return int(pese.Header[2])
 }
 
 const (
@@ -362,22 +363,22 @@ func (pese *PESExtension) ParsePESExtensionData(data []byte) (index int, err err
 // String implements the fmt.Stringer interface.
 // It returns a string that represents the value of the receiver in a form suitable for printing.
 // See https://pkg.go.dev/fmt#Stringer
-func (poh *PESExtension) String() string {
-	if err := poh.Validate(); err != nil {
+func (pese *PESExtension) String() string {
+	if err := pese.Validate(); err != nil {
 		return fmt.Sprintf("<invalid PES optional headers: %s>", err)
 	}
 	return fmt.Sprintf("PESExtension{ScramblingControl: %#v, HighPriority: %v, DataAligned: %v, Copyright: %v, Original: %v, PTSDTSPresence: %#v, ElementaryStreamClockReference: %v, ESRate: %v, DSMTrickMode: %v, AdditionalCopyInfo: %v, CRC: %v, SecondExtension: %v, RemainingHeaderLength: %d}",
-		poh.ScramblingControl(), poh.HighPriority(), poh.DataAligned(), poh.Copyright(), poh.Original(),
-		poh.PTSDTSPresence(), poh.ESCRPresent(), poh.ESRatePresent(), poh.DSMTrickMode(), poh.AdditionalCopyInfoPresent(), poh.CRCPresent(), poh.SecondExtensionPresent(),
-		poh.RemainingHeaderLength(),
+		pese.ScramblingControl(), pese.HighPriority(), pese.DataAligned(), pese.Copyright(), pese.Original(),
+		pese.PTSDTSPresence(), pese.ESCRPresent(), pese.ESRatePresent(), pese.DSMTrickMode(), pese.AdditionalCopyInfoPresent(), pese.CRCPresent(), pese.SecondExtensionPresent(),
+		pese.RemainingHeaderLength(),
 	)
 }
 
 // GoString implements the fmt.GoStringer interface.
 // It returns a string that represents the value of the receiver in a form suitable for debugging.
 // See https://pkg.go.dev/fmt#GoStringer
-func (poh *PESExtension) GoString() string {
-	return fmt.Sprintf("%08b %08b %08b", poh.Header[0], poh.Header[1], poh.Header[2]) // TODO data
+func (pese *PESExtension) GoString() string {
+	return fmt.Sprintf("%08b %08b %08b", pese.Header[0], pese.Header[1], pese.Header[2]) // TODO data
 }
 
 // ScramblingControl, more infos on https://patents.google.com/patent/WO2010000692A1/en

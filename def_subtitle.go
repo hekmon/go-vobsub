@@ -37,12 +37,12 @@ const (
 	subtitleCTRLSeqCmdEnd                 = 0xff
 )
 
-type SubtitleRAW struct {
+type SubtitleRaw struct {
 	Data             []byte
 	ControlSequences []ControlSequence
 }
 
-func (sr SubtitleRAW) Decode(metadata IdxMetadata, fullSize bool) (img image.Image, startDelay, stopDelay time.Duration, err error) {
+func (sr SubtitleRaw) Decode(metadata IdxMetadata, fullSize bool) (img image.Image, startDelay, stopDelay time.Duration, err error) {
 	// Consolidate rendering metadata
 	var (
 		paletteColors *ControlSequencePalette
@@ -272,7 +272,7 @@ func (coord SubtitlesWindow) Size() (width, height int) {
 	Extract helpers
 */
 
-func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRAW, err error) {
+func extractRAWSubtitle(packet PESPacket) (subtitle SubtitleRaw, err error) {
 	// Read the size first (size includes total header len)
 	size := int(packet.Payload[0])<<8 | int(packet.Payload[1])
 	// fmt.Printf("Packet len: 0b%08b 0b%08b -> %d\n", packet.Payload[0], packet.Payload[1], size)

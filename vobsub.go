@@ -49,7 +49,7 @@ func Decode(subFile string, fullSizeImages bool) (subtitles map[int][]Subtitle, 
 	// Decode raw subtitles to final subtitles
 	subtitles = make(map[int][]Subtitle, 1)
 	var (
-		rawSub     SubtitleRAW
+		rawSub     SubtitleRaw
 		pts        time.Duration
 		streamSubs []Subtitle
 		found      bool
