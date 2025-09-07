@@ -133,7 +133,7 @@ func ReadSubFile(subFile string) (privateStream1Packets []PESPacket, err error) 
 		nextAt int64
 		packet PESPacket
 	)
-	for nextAt > 0 {
+	for nextAt >= 0 {
 		if packet, nextAt, err = StreamParsePacket(fd, nextAt); err != nil {
 			err = fmt.Errorf("failed to parse packet: %w", err)
 			return
